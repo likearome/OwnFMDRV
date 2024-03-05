@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Build|Win32">
+      <Configuration>Build</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <ProjectGuid>{B581BE73-9244-4C3F-A722-A41BBF8C84D2}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Build|Win32'" Label="Configuration">
+    <ConfigurationType>Makefile</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Build|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Build|Win32'">
+    <NMakeBuildCommandLine>nmake clean all</NMakeBuildCommandLine>
+    <NMakeOutput>OwnFMDRV.exe</NMakeOutput>
+    <NMakeCleanCommandLine>nmake clean</NMakeCleanCommandLine>
+    <NMakeReBuildCommandLine>nmake clean all</NMakeReBuildCommandLine>
+    <NMakePreprocessorDefinitions>$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>
+    <ExecutablePath>C:\WATCOM\binnt64;C:\WATCOM\binnt;C:\WATCOM\binw</ExecutablePath>
+    <IncludePath>C:\WATCOM\h</IncludePath>
+    <ExternalIncludePath />
+    <ReferencePath />
+    <LibraryPath>C:\WATCOM\lib286\dos;C:\WATCOM\lib286;C:\WATCOM\lib386\dos;C:\WATCOM\lib386;</LibraryPath>
+    <LibraryWPath />
+    <SourcePath>C:\WATCOM\src</SourcePath>
+    <ExcludePath />
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="CD_RESID.C" />
+    <ClCompile Include="CD_TRANS.C" />
+    <ClCompile Include="DOSUTIL.C" />
+    <ClCompile Include="INIPARSE.C" />
+    <ClCompile Include="INTERUP.C" />
+    <ClCompile Include="OWNFMDRV.C" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="CDROMDRV.H" />
+    <ClInclude Include="chint.h" />
+    <ClInclude Include="DOSUTIL.H" />
+    <ClInclude Include="FMDRVDEF.H" />
+    <ClInclude Include="INIPARSE.H" />
+    <ClInclude Include="INTERUP.H" />
+    <ClInclude Include="MAINARGS.H" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="chint086.asm" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>
