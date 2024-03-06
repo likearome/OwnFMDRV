@@ -68,6 +68,13 @@ OwnFMDRV.INI에 추가하셔서 사용하실 수 있습니다.
   - 일반 사운드웨어 대비 크게 기대하시면 안됩니다.
 - 대표적으로 대항해시대1/2, 삼국지 등
 # 참조한 것들
+## 책
+- https://www.yes24.com/Product/Goods/133864
+  - C로 하드웨어 주무르기 (김석주) - 절판됨
+  - IBM DOS의 하드웨어(CD 등) 인터럽트 사용법 및 설명, 예제 등이 충실한 책
+- https://product.kyobobook.co.kr/detail/S000001093768
+  - IBM PC로 창조하는 음악의 세계 (김종수) - 지금도 판매중
+  - OPL3, 인텔리전트 MIDI등에 대한 자세한 설명을 볼 수 있는 책
 ## 문서
 - http://www.techhelpmanual.com/95-interrupts_and_bios_services.html
   - 가장 정확한 IBM DOS Interrupt 매뉴얼
