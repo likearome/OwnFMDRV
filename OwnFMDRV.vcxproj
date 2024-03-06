@@ -31,7 +31,7 @@
     <NMakeOutput>OwnFMDRV.exe</NMakeOutput>
     <NMakeCleanCommandLine>nmake clean</NMakeCleanCommandLine>
     <NMakeReBuildCommandLine>nmake clean all</NMakeReBuildCommandLine>
-    <NMakePreprocessorDefinitions>$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>
+    <NMakePreprocessorDefinitions>INTSIG_OFF;MAX_CDAUDIOTRACK;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>
     <ExecutablePath>C:\WATCOM\binnt64;C:\WATCOM\binnt;C:\WATCOM\binw</ExecutablePath>
     <IncludePath>C:\WATCOM\h</IncludePath>
     <ExternalIncludePath />

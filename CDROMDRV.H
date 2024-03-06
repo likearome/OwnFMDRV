@@ -65,7 +65,7 @@ typedef struct
 
 typedef struct
 {
-        int8 track;
+        int track;
 
         int32 fromSector;
         int32 toSector;
