@@ -29,7 +29,7 @@
       - 프로그램 특성상 초기화 로직이 상당히 크기 때문에 여러 TSR 트릭을 사용하여 구현하였습니다. (Thanks for EtherDFS)
 # INI 파일 항목 추가 방법
 - 예시
-<img width="405" alt="image" src="https://github.com/likearome/OwnFMDRV/assets/39750066/43934cbd-aae9-4871-9460-7a417a0c98c2">
+<img width="468" alt="image" src="https://github.com/likearome/OwnFMDRV/assets/39750066/04f9703a-eff6-4a90-9259-fa8c3ff8fb59">
 
 - 섹션을 대괄호 안에 영어로 입력합니다.
   - 섹션은 게임 제목과 연관이 있는 것으로 지으면 관리가 편합니다.
