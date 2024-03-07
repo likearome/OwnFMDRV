@@ -63,15 +63,6 @@ enum FMDRV_COMMAND_TYPE
         FMDRV_TERMINATE = FMDRV_COMMAND_FF,
 };
 
-// PlayStep에 적용된 비트는 2 뿐이므로 4개 이상 늘어나지 않도록 주의한다.
-enum PlayStep
-{
-        PLAYSTEP_PREPARE = 0,
-        PLAYSTEP_OPEN = 0,
-        PLAYSTEP_MAIN,
-        PLAYSTEP_END,
-};
-
 typedef struct
 {
         uint8 isFMDRVSet : 1;
@@ -85,7 +76,7 @@ typedef struct
         uint8 isFMPlay : 1;
         uint8 isCDBusy : 1;
 
-        uint8 isBufferChangeStyle : 1;
+		uint8 isBufferChangeStyleExist : 1;
 
         uint8 curPlayStep : 2;
 } LogicStatus;
@@ -122,7 +113,8 @@ uint32 volatile fromSector = 0;
 uint32 volatile toSector = 0;
 
 // 트랙 데이터 정보
-int8 isBufferChangeStyle = 0;
+int8 isBufferChangeStyleExist;
+int8 isBufferChangeStyle[PLAYSTEP_MAX];
 char openMusicFileName[20];
 char mainMusicFileName[20];
 char endMusicFileName[20];
@@ -885,6 +877,16 @@ int TrackIdxBinarySearch(uint32 trackOffset[], int trackNum, uint32 target)
 void ProcessDOSInt_BufChgFMTrack(unsigned long localFMTrackOffset)
 {
 	int ret = 0;
+
+	if (logicStatus.curPlayStep < PLAYSTEP_PREPARE || logicStatus.curPlayStep >= PLAYSTEP_MAX)
+	{
+		// 여기에 도달하면 코드에 문제가 있다는 소리다.
+		return;
+	}
+	
+	if (!isBufferChangeStyle[logicStatus.curPlayStep])
+		return;
+
 	// 파일이 무엇이냐와 상관없이 작동하게 되겠지만,
 	// 실제 음악연주 코드를 보면 fseek -> fread -> playMusic 이 바로 진행되므로,
 	// 엉뚱한 파일을 잘못 읽어서 트랙이 변경될 문제가 없다.
@@ -938,7 +940,7 @@ void __interrupt __far MyDOSInterrupt(union INTPACK r)
 		pop ax          // AX 복원
 	}
 
-	if (r.h.ah != 0x4B && !(r.h.ah == 0x42 && TRUE == logicStatus.isBufferChangeStyle)) goto CHAINTOPREVHANDLER;
+	if (r.h.ah != 0x4B && !(r.h.ah == 0x42 && TRUE == logicStatus.isBufferChangeStyleExist)) goto CHAINTOPREVHANDLER;
 
 	/* DEBUG output (BLUE) */
 #if DEBUGLEVEL > 1
@@ -972,7 +974,7 @@ void __interrupt __far MyDOSInterrupt(union INTPACK r)
 	{
 		ProcessDOSInt_SetPlayStep(_MK_FP(globDOSIntregs.w.ds, globDOSIntregs.w.dx));
 	}
-	else if (globDOSIntregs.h.ah == 0x42 && TRUE == logicStatus.isBufferChangeStyle)	// fseek
+	else if (globDOSIntregs.h.ah == 0x42 && TRUE == logicStatus.isBufferChangeStyleExist)	// fseek
 	{
 		unsigned long localFMTrackOffset = (globDOSIntregs.w.cx);
 		localFMTrackOffset <<= 16;
@@ -1134,9 +1136,9 @@ int SetupInterrupt(short newcs, short newds)
 
 		memset((void*)&logicStatus, 0, sizeof(logicStatus));
 		logicStatus.curPlayStep = PLAYSTEP_PREPARE;
-		if (isBufferChangeStyle)
+		if (isBufferChangeStyleExist)
 		{
-			logicStatus.isBufferChangeStyle = TRUE;
+			logicStatus.isBufferChangeStyleExist = TRUE;
 		}
 
 		memset((void*)&FMDRVIntStack, 0, sizeof(char) * NEWSTACKSZ);

@@ -3,6 +3,16 @@
 #define _INTERUP_H_
 #include "FMDRVDEF.H"
 
+// PlayStep에 적용된 비트는 2 뿐이므로 4개 이상 늘어나지 않도록 주의한다.
+enum PlayStep
+{
+	PLAYSTEP_PREPARE = 0,
+	PLAYSTEP_OPEN = 0,
+	PLAYSTEP_MAIN,
+	PLAYSTEP_END,
+	PLAYSTEP_MAX
+};
+
 #define INTERRUPT_SUCCESS       (int8)(0)
 #define INTERRUPT_FAIL          (int8)(0xFF)
 

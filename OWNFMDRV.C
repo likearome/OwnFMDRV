@@ -20,10 +20,12 @@
 #define INI_TMSF_TIMESEP        (":")
 #define INI_PLAYMARGIN          ("PLAYMARGIN")
 
-#define INI_IS_BUFFER_CHANGE_STYLE              ("IS_BUFFER_CHANGE_STYLE")
 #define INI_OPEN_MUSIC_FILENAME                 ("OPEN_MUSIC_FILENAME")
 #define INI_MAIN_MUSIC_FILENAME                 ("MAIN_MUSIC_FILENAME")
 #define INI_END_MUSIC_FILENAME                  ("END_MUSIC_FILENAME")
+#define INI_OPEN_MUSIC_NUM						("OPEN_MUSIC_NUM")
+#define INI_MAIN_MUSIC_NUM						("MAIN_MUSIC_NUM")
+#define INI_END_MUSIC_NUM						("END_MUSIC_NUM")
 #define INI_OPEN_EXE_FILENAME                   ("OPEN_EXE_FILENAME")
 #define INI_MAIN_EXE_FILENAME                   ("MAIN_EXE_FILENAME")
 #define INI_END_EXE_FILENAME                    ("END_EXE_FILENAME")
@@ -126,7 +128,7 @@ extern int8 cddrive;
 //uint8 trackStatus[MAX_CDAUDIOTRACK];
 extern int8 playMargin;
 extern uint8 orginalCDVolume;
-extern int8 isBufferChangeStyle;
+extern int8 isBufferChangeStyleExist;
 
 // CD 트랙 정보.
 extern CD_TMSF trackMap[MAX_CDAUDIOTRACK + 1];
@@ -141,6 +143,7 @@ extern uint32 fmTrackOffsetOpening[MAX_CDAUDIOTRACK + 1];
 extern uint32 fmTrackOffsetEnding[MAX_CDAUDIOTRACK + 1];
 
 // OPEN MAIN END 각각의 MUSIC 파일 이름
+extern int8 isBufferChangeStyle[PLAYSTEP_MAX];
 extern char openMusicFileName[20];
 extern char mainMusicFileName[20];
 extern char endMusicFileName[20];
@@ -205,26 +208,42 @@ static int iniHandler(void *user, const char *section, const char *name, const c
 			playMarginToSec = (playMargin * DEFAULT_FRAME_TO_SEC / 75);
             InfoLog("Play Margin: %d frames ( %d.%d secs )\n", playMargin, (playMarginToSec / DEFAULT_FRAME_TO_SEC), (playMarginToSec % DEFAULT_FRAME_TO_SEC));
         }
-        else if (!stricmp(name, INI_IS_BUFFER_CHANGE_STYLE))
-        {
-			isBufferChangeStyle = atoi(value);
-			InfoLog("GAME is BUFFER CHANGE STYLE: '%s'\n", (isBufferChangeStyle) ? "YES" : "NO");
-        }
         else if (!stricmp(name, INI_OPEN_MUSIC_FILENAME) && strlen(value) < (sizeof(openMusicFileName) / sizeof(char)))
         {
 			strcpy(openMusicFileName, value);
+            isBufferChangeStyleExist = TRUE;
+            isBufferChangeStyle[PLAYSTEP_OPEN] = TRUE;
 			InfoLog("Open MUSIC Filename: '%s'\n", openMusicFileName);
-        }
+		}
+		else if (!stricmp(name, INI_OPEN_MUSIC_NUM))
+		{
+			fmTrackSongNumOpening = atoi(value);
+			InfoLog("Open MUSIC Num: %d songs\n", fmTrackSongNumOpening);
+		}
         else if (!stricmp(name, INI_MAIN_MUSIC_FILENAME) && strlen(value) < (sizeof(mainMusicFileName) / sizeof(char)))
         {
-            strcpy(mainMusicFileName, value);
+			strcpy(mainMusicFileName, value);
+			isBufferChangeStyleExist = TRUE;
+			isBufferChangeStyle[PLAYSTEP_MAIN] = TRUE;
             InfoLog("Main MUSIC Filename: '%s'\n", mainMusicFileName);
-        }
+		}
+		else if (!stricmp(name, INI_MAIN_MUSIC_NUM))
+		{
+			fmTrackSongNum = atoi(value);
+			InfoLog("Main MUSIC Num: %d songs\n", fmTrackSongNum);
+		}
         else if (!stricmp(name, INI_END_MUSIC_FILENAME) && strlen(value) < (sizeof(endMusicFileName) / sizeof(char)))
         {
 			strcpy(endMusicFileName, value);
+			isBufferChangeStyleExist = TRUE;
+			isBufferChangeStyle[PLAYSTEP_END] = TRUE;
 			InfoLog("End MUSIC Filename: '%s'\n", endMusicFileName);
-        }
+		}
+		else if (!stricmp(name, INI_MAIN_MUSIC_NUM))
+		{
+			fmTrackSongNumEnding = atoi(value);
+			InfoLog("End MUSIC Num: %d songs\n", fmTrackSongNumEnding);
+		}
         else if (!stricmp(name, INI_OPEN_EXE_FILENAME) && strlen(value) < (sizeof(openExeFileName) / sizeof(char)))
         {
 			strcpy(openExeFileName, value);
@@ -396,7 +415,7 @@ static int iniHandler(void *user, const char *section, const char *name, const c
     return 1;
 }
 
-static int makeFMTrackOffset(char filename[20], uint32 trackOffsetInfo[MAX_CDAUDIOTRACK])
+static int makeFMTrackOffset(char filename[20], uint32 trackOffsetInfo[MAX_CDAUDIOTRACK], uint8 inputSongNum)
 {
 //#define MUSIC_FILE_MUSICNUM_SIZE      2
 //#define MUSIC_FILE_METAINFO_SIZE      6
@@ -406,113 +425,140 @@ static int makeFMTrackOffset(char filename[20], uint32 trackOffsetInfo[MAX_CDAUD
         uint16 songNum;
         uint16 beforeSongLength;
 
-        uint8 i;
+		uint8 i;
 
-        FILE *fp = fopen(filename, "rb");
-        if (NULL == fp)
+		FILE* fp = fopen(filename, "rb");
+		if (NULL == fp)
+		{
+			ErrorLog("cannot open '%s'\n", filename);
+			return OWNFMDRV_FAIL;
+		}
+
+		// 게임 음악이 미리 몇 개인지 알고 있어야 하는 타입
+		// 신들의 대지 고사기외전, 제독의 결단 2, 항유기
+        if (0 != inputSongNum)
         {
-                ErrorLog("cannot open '%s'\n", filename);
-                return OWNFMDRV_FAIL;
+			// 이 타입은 
+			// 2바이트 * 곡 수만큼 시작 오프셋,
+			// 2바이트 * 곡 수만큼 데이터 길이
+			// 가 저장되는 방식이다.
+			songNum = inputSongNum;
+
+			// 음악 시작 오프셋 2바이트씩 크기가 들어있다.
+			for (i = 0; i < songNum; ++i)
+			{
+				// 2byte of offset of track
+				if (1 != fread((void*)(&alignBuf), sizeof(alignBuf), 1, fp))
+				{
+					ErrorLog("cannot read '%s'\n", filename);
+					return OWNFMDRV_FAIL;
+				}
+				trackOffsetInfo[i + 1] = alignBuf;
+			}
         }
-
-        if (1 != fread((void *)(&alignBuf), sizeof(alignBuf), 1, fp) )
-        {
-                ErrorLog("cannot read '%s'\n", filename);
-                return OWNFMDRV_FAIL;
-        }
-
-        // 노래 갯수가 없는 방식
-        if (0 == alignBuf)
-        {
-                fseek(fp, 0, SEEK_SET);
-
-                songNum = 0;
-
-                trackOffsetInfo[0] = 0;
-                beforeSongLength = 0;
-
-                for(i = 0; ; i++)
-                {
-                        // lower byte of offset of track
-                        if (1 != fread((void *)(&alignBuf), sizeof(alignBuf), 1, fp))
-                        {
-                                ErrorLog("cannot read '%s'\n", filename);
-                                return OWNFMDRV_FAIL;
-                        }
-                        trackOffsetInfo[i + 1] = alignBuf;
-
-                        // higher byte of offset of track
-                        if (1 != fread((void *)(&alignBuf), sizeof(alignBuf), 1, fp))
-                        {
-                                ErrorLog("cannot read '%s'\n", filename);
-                                return OWNFMDRV_FAIL;
-                        }
-                        trackOffsetInfo[i + 1] += (uint32)(alignBuf) << 16;
-
-                        if (trackOffsetInfo[i] + beforeSongLength != trackOffsetInfo[i + 1])
-                        {
-                                trackOffsetInfo[i + 1] = 0;
-                                break;
-                        }
-
-                        songNum++;
-                        if (songNum >= MAX_CDAUDIOTRACK)
-                        {
-                                ErrorLog("'%s' has more than %d songs that is not allowed. (had %d)\n", filename, MAX_CDAUDIOTRACK, songNum);
-                                return OWNFMDRV_FAIL;
-                        }
-                        // length of track
-                        if (1 != fread((void *)(&alignBuf), sizeof(alignBuf), 1, fp))
-                        {
-                                ErrorLog("cannot read '%s'\n", filename);
-                                return OWNFMDRV_FAIL;
-                        }
-                        beforeSongLength = alignBuf;
-                }
-                //songNum = 1;
-
-                //// 6바이트의 메타 정보를 지나면 노래 시작 버퍼가 된다.
-                //hdrLength = MUSIC_FILE_METAINFO_SIZE;
-                //trackOffsetInfo[1] = hdrLength;
-        }
-        // 노래가 여러 개
         else
         {
-                songNum = alignBuf;
-                if (songNum >= MAX_CDAUDIOTRACK)
-                {
-                        ErrorLog("'%s' has more than %d songs that is not allowed. (had %d)\n", filename, MAX_CDAUDIOTRACK, songNum);
-                        return OWNFMDRV_FAIL;
-                }
+			if (1 != fread((void*)(&alignBuf), sizeof(alignBuf), 1, fp))
+			{
+				ErrorLog("cannot read '%s'\n", filename);
+				return OWNFMDRV_FAIL;
+			}
 
-                hdrLength = MUSIC_FILE_MUSICNUM_SIZE + songNum * MUSIC_FILE_METAINFO_SIZE;
+			// 노래 갯수가 없는 방식
+			if (0 == alignBuf)
+			{
+				fseek(fp, 0, SEEK_SET);
 
-                for (i = 0; i < songNum; ++i)
-                {
-                        // lower byte of offset of track
-                        if (1 != fread((void *)(&alignBuf), sizeof(alignBuf), 1, fp))
-                        {
-                                ErrorLog("cannot read '%s'\n", filename);
-                                return OWNFMDRV_FAIL;
-                        }
-                        trackOffsetInfo[i + 1] = alignBuf + hdrLength;
+				songNum = 0;
 
-                        // higher byte of offset of track
-                        if (1 != fread((void *)(&alignBuf), sizeof(alignBuf), 1, fp))
-                        {                                ErrorLog("cannot read '%s'\n", filename);
-                                return OWNFMDRV_FAIL;
-                        }
-                        trackOffsetInfo[i + 1] += (uint32)(alignBuf) << 16;
+				trackOffsetInfo[0] = 0;
+				beforeSongLength = 0;
 
-                        // length of track
-                        if (1 != fread((void *)(&alignBuf), sizeof(alignBuf), 1, fp))
-                        {
-                                ErrorLog("cannot read '%s'\n", filename);
-                                return OWNFMDRV_FAIL;
-                        }
-                }
+				for (i = 0; ; i++)
+				{
+					// lower byte of offset of track
+					if (1 != fread((void*)(&alignBuf), sizeof(alignBuf), 1, fp))
+					{
+						ErrorLog("cannot read '%s'\n", filename);
+						return OWNFMDRV_FAIL;
+					}
+					trackOffsetInfo[i + 1] = alignBuf;
+
+					// higher byte of offset of track
+					if (1 != fread((void*)(&alignBuf), sizeof(alignBuf), 1, fp))
+					{
+						ErrorLog("cannot read '%s'\n", filename);
+						return OWNFMDRV_FAIL;
+					}
+					trackOffsetInfo[i + 1] += (uint32)(alignBuf) << 16;
+
+					if (trackOffsetInfo[i] + beforeSongLength != trackOffsetInfo[i + 1])
+					{
+						trackOffsetInfo[i + 1] = 0;
+						break;
+					}
+
+					songNum++;
+					if (songNum >= MAX_CDAUDIOTRACK)
+					{
+						ErrorLog("'%s' has more than %d songs that is not allowed. (had %d)\n", filename, MAX_CDAUDIOTRACK, songNum);
+						return OWNFMDRV_FAIL;
+					}
+					// length of track
+					if (1 != fread((void*)(&alignBuf), sizeof(alignBuf), 1, fp))
+					{
+						ErrorLog("cannot read '%s'\n", filename);
+						return OWNFMDRV_FAIL;
+					}
+					beforeSongLength = alignBuf;
+				}
+				//songNum = 1;
+
+				//// 6바이트의 메타 정보를 지나면 노래 시작 버퍼가 된다.
+				//hdrLength = MUSIC_FILE_METAINFO_SIZE;
+				//trackOffsetInfo[1] = hdrLength;
+			}
+			// 노래가 여러 개
+			else
+			{
+				songNum = alignBuf;
+				if (songNum >= MAX_CDAUDIOTRACK)
+				{
+					ErrorLog("'%s' has more than %d songs that is not allowed. (had %d)\n", filename, MAX_CDAUDIOTRACK, songNum);
+					return OWNFMDRV_FAIL;
+				}
+
+				hdrLength = MUSIC_FILE_MUSICNUM_SIZE + songNum * MUSIC_FILE_METAINFO_SIZE;
+
+				for (i = 0; i < songNum; ++i)
+				{
+					// lower byte of offset of track
+					if (1 != fread((void*)(&alignBuf), sizeof(alignBuf), 1, fp))
+					{
+						ErrorLog("cannot read '%s'\n", filename);
+						return OWNFMDRV_FAIL;
+					}
+					trackOffsetInfo[i + 1] = alignBuf + hdrLength;
+
+					// higher byte of offset of track
+					if (1 != fread((void*)(&alignBuf), sizeof(alignBuf), 1, fp))
+					{
+						ErrorLog("cannot read '%s'\n", filename);
+						return OWNFMDRV_FAIL;
+					}
+					trackOffsetInfo[i + 1] += (uint32)(alignBuf) << 16;
+
+					// length of track
+					if (1 != fread((void*)(&alignBuf), sizeof(alignBuf), 1, fp))
+					{
+						ErrorLog("cannot read '%s'\n", filename);
+						return OWNFMDRV_FAIL;
+					}
+				}
+			}
         }
 
+		fclose(fp);
         InfoLog("File '%s' had %d songs.\n", filename, songNum);
 
         return songNum;
@@ -572,7 +618,12 @@ int main(int argc, char **argv)
 	// INI 정보 읽어들이기
 	orginalCDVolume = args.volume == 0 ? (uint8)DEFAULT_VOLUME : (uint8)args.volume;
     InfoLog("Set CD Volume to %d\n", orginalCDVolume);
-
+    
+    isBufferChangeStyleExist = FALSE;
+    memset((void*)isBufferChangeStyle, FALSE, sizeof(int8) * PLAYSTEP_MAX);
+	fmTrackSongNumOpening = 0;
+	fmTrackSongNum = 0;
+	fmTrackSongNumEnding = 0;
     memset((void *)openMusicFileName, 0, sizeof(char) * sizeof(openMusicFileName));
     memset((void *)mainMusicFileName, 0, sizeof(char) * sizeof(mainMusicFileName));
     memset((void *)endMusicFileName, 0, sizeof(char) * sizeof(endMusicFileName));
@@ -695,34 +746,63 @@ int main(int argc, char **argv)
     InfoLog("Main EXE Filename: '%s'\n", mainExeFileName);
     InfoLog("End EXE Filename: '%s'\n", endExeFileName);
 
-    if (isBufferChangeStyle)
+    if (isBufferChangeStyleExist)
     {
-        InfoLog("Open MUSIC Filename: '%s'\n", openMusicFileName);
-        InfoLog("Main MUSIC Filename: '%s'\n", mainMusicFileName);
-        InfoLog("End MUSIC Filename: '%s'\n", endMusicFileName);
+        // 1. Open 작업
+        if (isBufferChangeStyle[PLAYSTEP_OPEN])
+        {
+			if (0 == strlen(openMusicFileName))
+			{
+				ErrorLog("Open MUSIC Filename not valid!\n");
+				return OWNFMDRV_FAIL;
+			}
 
-		if (0 == strlen(openMusicFileName) || 0 == strlen(mainMusicFileName) || 0 == strlen(endMusicFileName))
-		{
-			ErrorLog("BUFFERCHANGESTYLE game must set MUSIC Filename at all.\n");
-			return OWNFMDRV_FAIL;
+			InfoLog("Open MUSIC Filename: '%s'\n", openMusicFileName);
+
+			fmTrackSongNumOpening = makeFMTrackOffset(openMusicFileName, fmTrackOffsetOpening, fmTrackSongNumOpening);
+			if (OWNFMDRV_FAIL == fmTrackSongNumOpening)
+			{
+				ErrorLog("cannot make track offset from '%s' file. Maybe not exist?\n", openMusicFileName);
+				return OWNFMDRV_FAIL;
+			}
 		}
-		fmTrackSongNumOpening = makeFMTrackOffset(openMusicFileName, fmTrackOffsetOpening);
-		if (OWNFMDRV_FAIL == fmTrackSongNumOpening)
+
+		// 2. Main 작업
+		if (isBufferChangeStyle[PLAYSTEP_MAIN])
 		{
-			ErrorLog("cannot make track offset from '%s' file. Maybe not exist?\n", openMusicFileName);
-			return OWNFMDRV_FAIL;
+			if (0 == strlen(mainMusicFileName))
+			{
+				ErrorLog("Main MUSIC Filename not valid!\n");
+				return OWNFMDRV_FAIL;
+			}
+
+			InfoLog("Main MUSIC Filename: '%s'\n", mainMusicFileName);
+
+			fmTrackSongNum = makeFMTrackOffset(mainMusicFileName, fmTrackOffset, fmTrackSongNum);
+			if (OWNFMDRV_FAIL == fmTrackSongNum)
+			{
+				ErrorLog("cannot make track offset from '%s' file. Maybe not exist?\n", mainMusicFileName);
+				return OWNFMDRV_FAIL;
+			}
 		}
-		fmTrackSongNum = makeFMTrackOffset(mainMusicFileName, fmTrackOffset);
-		if (OWNFMDRV_FAIL == fmTrackSongNum)
+
+		// 2. End 작업
+		if (isBufferChangeStyle[PLAYSTEP_END])
 		{
-			ErrorLog("cannot make track offset from '%s' file. Maybe not exist?\n", mainMusicFileName);
-			return OWNFMDRV_FAIL;
-		}
-		fmTrackSongNumEnding = makeFMTrackOffset(endMusicFileName, fmTrackOffsetEnding);
-		if (OWNFMDRV_FAIL == fmTrackSongNumEnding)
-		{
-			ErrorLog("cannot make track offset from '%s' file. Maybe not exist?\n", endMusicFileName);
-			return OWNFMDRV_FAIL;
+			if (0 == strlen(endMusicFileName))
+			{
+				ErrorLog("End MUSIC Filename not valid!\n");
+				return OWNFMDRV_FAIL;
+			}
+
+			InfoLog("End MUSIC Filename: '%s'\n", endMusicFileName);
+
+			fmTrackSongNumEnding = makeFMTrackOffset(endMusicFileName, fmTrackOffsetEnding, fmTrackSongNumEnding);
+			if (OWNFMDRV_FAIL == fmTrackSongNumEnding)
+			{
+				ErrorLog("cannot make track offset from '%s' file. Maybe not exist?\n", endMusicFileName);
+				return OWNFMDRV_FAIL;
+			}
 		}
     }
 
