@@ -795,7 +795,7 @@ void __interrupt __far MyTickInterrupt(union INTPACK r)
 		return;
 	}
 
-CHAINTOPREVHANDLER:
+//CHAINTOPREVHANDLER:
 	_mvchain_intr(MK_FP(globData.prev_tick_handler_seg, globData.prev_tick_handler_off));
 }
 
@@ -954,7 +954,7 @@ void ProcessDOSInt_SetMusicFileHandle(uint8 flag, char far* filename)
 	if (!filename)
 		return;
 
-	// fopen 플래그 의미가 읽기전용(AL==0)이거나 읽고쓰기(AL==2)일 떄에만 후킹한다.
+	// fopen 플래그 의미가 읽기전용(AL==0)이거나 읽고쓰기(AL==2)일 때에만 후킹한다.
 	if (0 != globDOSIntregs.h.al && 2 != globDOSIntregs.h.al)
 		return;
 
