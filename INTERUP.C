@@ -887,12 +887,6 @@ void ProcessDOSInt_BufChgFMTrack(uint16 fileHandle, uint32 localFMTrackOffset)
 		}
 		break;
 	case PLAYSTEP_MAIN:
-		_asm
-		{
-			jmp SKIPTSRSIG
-			TSRSIG db 'MFQW'
-			SKIPTSRSIG:
-		}
 		if (fileHandle == mainMusicFileHandle)
 		{
 			trackIdx = TrackIdxBinarySearch(fmTrackOffset, fmTrackSongNum, localFMTrackOffset);
