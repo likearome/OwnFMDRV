@@ -484,7 +484,7 @@ void __interrupt __far MyFMDRVInterrupt(union INTPACK r)
 	// 파라미터로 입력받은 (실제로는 스택에 저장된) 인터럽트 레지스터 상태값 r을 별도 전역변수에 보존한다.
 	// 그래야 이 인터럽트를 실행하고 바뀐 레지스터값이 아닌, 첫 호출자(caller)가 보냈던 인터럽트를 그대로
 	// 체인된 다음 인터럽트에 보내줄 수 있다.
-	mymemcpy(&globDOSIntregs, &r, sizeof(union INTPACK));
+	mymemcpy(&globFMDRVIntregs, &r, sizeof(union INTPACK));
 	// 스택 포인터를 전역변수 공간으로 이동한다.
 	_asm
 	{
@@ -742,7 +742,7 @@ void __interrupt __far MyTickInterrupt(union INTPACK r)
 	// 파라미터로 입력받은 (실제로는 스택에 저장된) 인터럽트 레지스터 상태값 r을 별도 전역변수에 보존한다.
 	// 그래야 이 인터럽트를 실행하고 바뀐 레지스터값이 아닌, 첫 호출자(caller)가 보냈던 인터럽트를 그대로
 	// 체인된 다음 인터럽트에 보내줄 수 있다.
-	mymemcpy(&globDOSIntregs, &r, sizeof(union INTPACK));
+	mymemcpy(&globTickIntregs, &r, sizeof(union INTPACK));
 	// 스택 포인터를 전역변수 공간으로 이동한다.
 	_asm
 	{
