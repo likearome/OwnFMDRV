@@ -469,14 +469,6 @@ void __interrupt __far MyFMDRVInterrupt(union INTPACK r)
 		pop ax          // AX 복원
 	}
 
-	/* DEBUG output (BLUE) */
-#if DEBUGLEVEL > 1
-	dbg_VGA[dbg_startoffset + dbg_xpos++] = 0x1e00 | (dbg_hexc[(r.h.ah >> 4) & 0xf]);
-	dbg_VGA[dbg_startoffset + dbg_xpos++] = 0x1e00 | (dbg_hexc[r.h.ah & 0xf]);
-	dbg_VGA[dbg_startoffset + dbg_xpos++] = 0x1e00 | (dbg_hexc[(r.h.al >> 4) & 0xf]);
-	dbg_VGA[dbg_startoffset + dbg_xpos++] = 0x1e00 | (dbg_hexc[r.h.al & 0xf]);
-	dbg_VGA[dbg_startoffset + dbg_xpos++] = 0;
-#endif
 	switch (r.h.ah)	// COMMAND
 	{
 	case FMDRV_PLAY:
@@ -489,9 +481,11 @@ void __interrupt __far MyFMDRVInterrupt(union INTPACK r)
 		goto CHAINTOPREVHANDLER;
 	}
 
-	/* copy interrupt registers into globIntregs so the int handler can access them without using any stack */
-	mymemcpy(&globFMDRVIntregs, &r, sizeof(union INTPACK));
-	/* set stack to my custom memory */
+	// 파라미터로 입력받은 (실제로는 스택에 저장된) 인터럽트 레지스터 상태값 r을 별도 전역변수에 보존한다.
+	// 그래야 이 인터럽트를 실행하고 바뀐 레지스터값이 아닌, 첫 호출자(caller)가 보냈던 인터럽트를 그대로
+	// 체인된 다음 인터럽트에 보내줄 수 있다.
+	mymemcpy(&globDOSIntregs, &r, sizeof(union INTPACK));
+	// 스택 포인터를 전역변수 공간으로 이동한다.
 	_asm
 	{
 		cli //인터럽트를 중지하여, 다른 인터럽트가 스택 변환중 문제가 발생하지 않도록 조치한다.
@@ -679,8 +673,6 @@ uint8 TryOverrideFMDRV(void)
 		if (0 != FMDRVVect && ((uint32)FMDRVVect > FMDRV_MARKER_OFFSET))
 		{
 			FMDRVMarker = (char __far*)((uint32)FMDRVVect - FMDRV_MARKER_OFFSET);
-			//if((FMDRVMarker[0] == 'O' && FMDRVMarker[1] == 'P' && FMDRVMarker[2] == 'L' && FMDRVMarker[3] == 'D' && FMDRVMarker[4] == 'R' && FMDRVMarker[0] == 'V')
-			//|| (FMDRVMarker[0] == 'S' && FMDRVMarker[1] == 'B' && FMDRVMarker[2] == ' ' && FMDRVMarker[3] == 'D' && FMDRVMarker[4] == 'R' && FMDRVMarker[0] == 'V'))
 			cmpFMDRV = mystrcmp(FMDRVMarker, FMDRV_Marker_Str);
 			cmpSBOPL2 = mystrcmp(FMDRVMarker, SBDRV_Marker_Str);
 			if (0 == cmpFMDRV || 0 == cmpSBOPL2)
@@ -713,12 +705,10 @@ void ProcessTickInt(void)
 
 		if (TRUE == logicStatus.isFMDRVSet)
 		{
-			//_putchar('M');
 			logicStatus.isTermSignal = MonitorFMDRV();
 		}
 		else
 		{
-			//_putchar('T');
 			logicStatus.isTermSignal = TryOverrideFMDRV();
 		}
 
@@ -749,20 +739,11 @@ void __interrupt __far MyTickInterrupt(union INTPACK r)
 		pop ax          // AX 복원
 	}
 
-	//if (*dosActiveFlag) goto CHAINTOPREVHANDLER;
-
-	/* DEBUG output (BLUE) */
-#if DEBUGLEVEL > 1
-	dbg_VGA[dbg_startoffset + dbg_xpos++] = 0x1e00 | (dbg_hexc[(r.h.ah >> 4) & 0xf]);
-	dbg_VGA[dbg_startoffset + dbg_xpos++] = 0x1e00 | (dbg_hexc[r.h.ah & 0xf]);
-	dbg_VGA[dbg_startoffset + dbg_xpos++] = 0x1e00 | (dbg_hexc[(r.h.al >> 4) & 0xf]);
-	dbg_VGA[dbg_startoffset + dbg_xpos++] = 0x1e00 | (dbg_hexc[r.h.al & 0xf]);
-	dbg_VGA[dbg_startoffset + dbg_xpos++] = 0;
-#endif
-
-	/* copy interrupt registers into globIntregs so the int handler can access them without using any stack */
-	mymemcpy(&globTickIntregs, &r, sizeof(union INTPACK));
-	/* set stack to my custom memory */
+	// 파라미터로 입력받은 (실제로는 스택에 저장된) 인터럽트 레지스터 상태값 r을 별도 전역변수에 보존한다.
+	// 그래야 이 인터럽트를 실행하고 바뀐 레지스터값이 아닌, 첫 호출자(caller)가 보냈던 인터럽트를 그대로
+	// 체인된 다음 인터럽트에 보내줄 수 있다.
+	mymemcpy(&globDOSIntregs, &r, sizeof(union INTPACK));
+	// 스택 포인터를 전역변수 공간으로 이동한다.
 	_asm
 	{
 		cli //인터럽트를 중지하여, 다른 인터럽트가 스택 변환중 문제가 발생하지 않도록 조치한다.
@@ -942,18 +923,11 @@ void __interrupt __far MyDOSInterrupt(union INTPACK r)
 
 	if (r.h.ah != 0x4B && !(r.h.ah == 0x42 && TRUE == logicStatus.isBufferChangeStyleExist)) goto CHAINTOPREVHANDLER;
 
-	/* DEBUG output (BLUE) */
-#if DEBUGLEVEL > 1
-	dbg_VGA[dbg_startoffset + dbg_xpos++] = 0x1e00 | (dbg_hexc[(r.h.ah >> 4) & 0xf]);
-	dbg_VGA[dbg_startoffset + dbg_xpos++] = 0x1e00 | (dbg_hexc[r.h.ah & 0xf]);
-	dbg_VGA[dbg_startoffset + dbg_xpos++] = 0x1e00 | (dbg_hexc[(r.h.al >> 4) & 0xf]);
-	dbg_VGA[dbg_startoffset + dbg_xpos++] = 0x1e00 | (dbg_hexc[r.h.al & 0xf]);
-	dbg_VGA[dbg_startoffset + dbg_xpos++] = 0;
-#endif
-
-	/* copy interrupt registers into globIntregs so the int handler can access them without using any stack */
+	// 파라미터로 입력받은 (실제로는 스택에 저장된) 인터럽트 레지스터 상태값 r을 별도 전역변수에 보존한다.
+	// 그래야 이 인터럽트를 실행하고 바뀐 레지스터값이 아닌, 첫 호출자(caller)가 보냈던 인터럽트를 그대로
+	// 체인된 다음 인터럽트에 보내줄 수 있다.
 	mymemcpy(&globDOSIntregs, &r, sizeof(union INTPACK));
-	/* set stack to my custom memory */
+	// 스택 포인터를 전역변수 공간으로 이동한다.
 	_asm
 	{
 		cli //인터럽트를 중지하여, 다른 인터럽트가 스택 변환중 문제가 발생하지 않도록 조치한다.
@@ -1119,7 +1093,7 @@ int SetupInterrupt(uint16 newcs, uint16 newds)
 	union REGS regs;
 	struct SREGS sregs;
 
-	// LoadHigh일 경우 DS가 꼬이기 때문에 전역변수에 대한 제대로된 세팅을 위해 ds를 교체한다.
+	// 도스의 LH가 아닌, 옵션 /H를 통한 LoadHigh일 경우 DS가 꼬이기 때문에 전역변수에 대한 제대로된 세팅을 위해 ds를 교체한다.
 	// 이 때, 아직 Transient쪽의 코드도 작동해야 하기 때문에 전역변수를 write하는 코드에만 ds를 교체할 수 있도록 한다.
 #define BACKUP_OLDDS			_asm mov oldds, ds
 #define SET_DS_TO_NEWDS			_asm mov ds, newds
@@ -1150,7 +1124,7 @@ int SetupInterrupt(uint16 newcs, uint16 newds)
 
 	_disable();
 
-	// 1. FM 연주를 위한 Tick 인터럽트를 후킹한다.
+	// 1. CD 연주 및 감시를 위한 Tick 인터럽트를 후킹한다.
 	oldInt = _dos_getvect(TICK_INTERRUPT);
 	SET_DS_TO_NEWDS;
 	{

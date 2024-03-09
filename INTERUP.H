@@ -13,21 +13,13 @@ enum PlayStep
 	PLAYSTEP_MAX
 };
 
-#define INTERRUPT_SUCCESS       (int8)(0)
-#define INTERRUPT_FAIL          (int8)(-1)
+#define INTERRUPT_SUCCESS					(int8)(0)
+#define INTERRUPT_FAIL						(int8)(-1)
 
-#define INTERRUPT_NOCHAIN       (int8)(0)
-#define INTERRUPT_NEXTCHAIN     (int8)(1)
+#define INTERRUPT_NOCHAIN					(int8)(0)
+#define INTERRUPT_NEXTCHAIN					(int8)(1)
 
-#define NEWSTACKSZ 0x200	// 512 bytes
-
-/* a few globals useful only for debug messages */
-#if DEBUGLEVEL > 0
-static unsigned short dbg_xpos = 0;
-static unsigned short far* dbg_VGA = (unsigned short far*)(0xB8000000l);
-static unsigned char dbg_hexc[16] = "0123456789ABCDEF";
-#define dbg_startoffset 80*16
-#endif
+#define NEWSTACKSZ							0x200	// 512 bytes
 
 #define GLOB_DATOFF_PREV_66_HANDLER_SEG		0
 #define GLOB_DATOFF_PREV_66_HANDLER_OFF		2
