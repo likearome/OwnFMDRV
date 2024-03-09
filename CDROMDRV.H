@@ -65,7 +65,7 @@ typedef struct
 
 typedef struct
 {
-	int track;
+	int8 track;
 
 	int32 fromSector;
 	int32 toSector;
@@ -82,7 +82,7 @@ extern int8 TestCDROM(void);
 
 extern int8 CDAudio_GetCDROMNum(int8 OUTPARAM* drive);
 extern int8 CDAudio_GetCDROMDriverVersion(int8 OUTPARAM* majorver, int8 OUTPARAM* minorver);
-extern int8 CDAudio_GetCDROMDriveList(int8 OUTPARAM driveLetter[]);    // 반드시 GetCDROMNum에서 얻은 드라이브 수 만큼의 버퍼 크기를 주어야 한다.
+extern int8 CDAudio_GetCDROMDriveList(uint8 OUTPARAM driveLetter[]);    // 반드시 GetCDROMNum에서 얻은 드라이브 수 만큼의 버퍼 크기를 주어야 한다.
 extern int8 CDAudio_GetDiskInfo(int8 INPARAM drive, uint8 OUTPARAM* firstTrack, uint8 OUTPARAM* lastTrack, uint32 OUTPARAM* leadoutTrack);
 extern int8 CDAudio_GetTrackInfo(int8 INPARAM drive, uint8 INPARAM firstTrack, uint8 INPARAM lastTrack, uint32 OUTPARAM startPos[], uint8 OUTPARAM status[]);  // 반드시 Track 수 만큼의 버퍼 크기를 주어야 한다.
 extern int8 CDAudio_IsAudioTrack(uint8 status);

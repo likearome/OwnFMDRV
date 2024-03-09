@@ -14,7 +14,7 @@ enum PlayStep
 };
 
 #define INTERRUPT_SUCCESS       (int8)(0)
-#define INTERRUPT_FAIL          (int8)(0xFF)
+#define INTERRUPT_FAIL          (int8)(-1)
 
 #define INTERRUPT_NOCHAIN       (int8)(0)
 #define INTERRUPT_NEXTCHAIN     (int8)(1)
@@ -53,8 +53,8 @@ extern struct tsrshareddata globData;
 
 extern void begtextend(void);
 
-extern int StartTSR(void);
-extern int IsTSRInstalled(void);
-extern int UnloadTSR(void);
+extern int8 StartTSR(void);
+extern int8 IsTSRInstalled(void);
+extern int8 UnloadTSR(void);
 
 #endif // _INTERUP_H_

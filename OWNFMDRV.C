@@ -415,7 +415,7 @@ static int iniHandler(void* user, const char* section, const char* name, const c
 	return 1;
 }
 
-static int makeFMTrackOffset(char filename[20], uint32 trackOffsetInfo[MAX_CDAUDIOTRACK], uint8 inputSongNum)
+static uint16 makeFMTrackOffset(char filename[20], uint32 trackOffsetInfo[MAX_CDAUDIOTRACK], uint8 inputSongNum)
 {
 	//#define MUSIC_FILE_MUSICNUM_SIZE      2
 	//#define MUSIC_FILE_METAINFO_SIZE      6
@@ -569,7 +569,7 @@ int main(int argc, char** argv)
 	int8 drivenum = 0;
 	int i;
 
-	char cddriveLetter[MAX_CDDRIVE];
+	uint8 cddriveLetter[MAX_CDDRIVE];
 
 	ErrorLog("FMDRV Wrapper Version " OWNFMDRV_VER "\n");
 	ErrorLog("Copyright (C) 2024 Jeong Jinwook\n\n");
@@ -647,8 +647,8 @@ int main(int argc, char** argv)
 
 	// CDROM이 있을 경우 MSCDEX 버전 체크
 	{
-		uint8 cd_majorver = 0;
-		uint8 cd_minorver = 0;
+		int8 cd_majorver = 0;
+		int8 cd_minorver = 0;
 
 		if (CDAUDIO_FAIL == CDAudio_GetCDROMDriverVersion(&cd_majorver, &cd_minorver))
 		{

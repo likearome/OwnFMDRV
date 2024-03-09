@@ -98,14 +98,14 @@ int8 playMargin = 0;
 uint8 orginalCDVolume = 0;
 
 // play info
-int volatile startAudioCD = 0;
-int volatile startAudioCDStep = 0;
-int volatile stopAudioCDStep = 0;
-int volatile orgStopAudioCDStep = 0;
-int volatile curPlayTrack = -1;
-int volatile curFMTrack = -1;
-int volatile bufChgFMTrack = -1;
-int volatile FMPassThrough = 0;
+int8 volatile startAudioCD = 0;
+int8 volatile startAudioCDStep = 0;
+int8 volatile stopAudioCDStep = 0;
+int8 volatile orgStopAudioCDStep = 0;
+int8 volatile curPlayTrack = -1;
+int8 volatile curFMTrack = -1;
+int8 volatile bufChgFMTrack = -1;
+int8 volatile FMPassThrough = 0;
 
 uint32 volatile fromSector = 0;
 uint32 volatile toSector = 0;
@@ -124,9 +124,9 @@ CD_TMSF trackMap[MAX_CDAUDIOTRACK + 1];
 CD_TMSF trackMapOpening[MAX_CDAUDIOTRACK + 1];
 CD_TMSF trackMapEnding[MAX_CDAUDIOTRACK + 1];
 
-int8 fmTrackSongNum = 0;
-int8 fmTrackSongNumOpening = 0;
-int8 fmTrackSongNumEnding = 0;
+uint8 fmTrackSongNum = 0;
+uint8 fmTrackSongNumOpening = 0;
+uint8 fmTrackSongNumEnding = 0;
 
 uint32 fmTrackOffset[MAX_CDAUDIOTRACK + 1];
 uint32 fmTrackOffsetOpening[MAX_CDAUDIOTRACK + 1];
@@ -134,14 +134,14 @@ uint32 fmTrackOffsetEnding[MAX_CDAUDIOTRACK + 1];
 
 ////////////////////////////////////////
 // Interrupt parameters
-int8 far* dosActiveFlag;
+uint8 far* dosActiveFlag;
 
 const char FMDRV_Marker_Str[FMDRV_MARKER_SIZE] = FMDRV_MARKER;
 const char SBDRV_Marker_Str[FMDRV_MARKER_SIZE] = SBDRV_MARKER;
 
 // 유틸리티 함수
 // memcpy
-static void __declspec(naked) mymemcpy(void far* dst, void far* src, unsigned int len) {
+static void __declspec(naked) mymemcpy(void far* dst, void far* src, uint16 len) {
 	(void)dst;
 	(void)src;
 	(void)len;
@@ -166,7 +166,7 @@ static void __declspec(naked) mymemcpy(void far* dst, void far* src, unsigned in
 #pragma aux mymemcpy parm [es di] [dx si] [cx] modify exact [cx di si] nomemory;
 
 //// strlen
-//static unsigned short __declspec(naked) mystrlen(void far* s) {
+//static uint16 __declspec(naked) mystrlen(void far* s) {
 //	(void)s;	// es:di
 //
 //	_asm 
@@ -188,7 +188,7 @@ static void __declspec(naked) mymemcpy(void far* dst, void far* src, unsigned in
 //}
 //#pragma aux mystrlen parm [es di] value [cx] modify exact [ax cx di] nomemory;
 
-static int mystrstr(char far* srcFilePtr, char far* dstFilePtr)
+static int8 mystrstr(char far* srcFilePtr, char far* dstFilePtr)
 {
 	char far* srcFilePtrBegin = 0;
 	while (*srcFilePtr)
@@ -214,7 +214,7 @@ static int mystrcmp(const char far* s, const char far* t)
 	for (; *s == *t; s++, t++)
 		if (*s == '\0')
 			return(0);
-	return (*s - *t);
+	return (int)(*s - *t);
 }
 
 static void __declspec(naked) (__interrupt __far* mygetvect(int8 interruptnum))()
@@ -248,9 +248,9 @@ static void __declspec(naked) mysetvect(int8 interruptnum, void (__interrupt __f
 #pragma aux mysetvect parm [ax cx dx] modify exact [ax] nomemory;
 
 // allocseg로 확보한 세그먼트를 free한다.
-static unsigned short freeseg(unsigned short segm)
+static uint16 freeseg(uint16 segm)
 {
-	unsigned short retval = 0;
+	uint16 retval = 0;
 	_asm
 	{
 		mov ah, 49h   // 49h 세그먼트 free MS-DOS 2+
@@ -266,17 +266,17 @@ static unsigned short freeseg(unsigned short segm)
 
 ////////////////////////////////////////
 // 인터럽트 핸들러에서 사용하기 위한 스택
-static unsigned char FMDRVIntStack[NEWSTACKSZ];
-static unsigned char TickIntStack[NEWSTACKSZ];
-static unsigned char DOSIntStack[NEWSTACKSZ];
+static uint8 FMDRVIntStack[NEWSTACKSZ];
+static uint8 TickIntStack[NEWSTACKSZ];
+static uint8 DOSIntStack[NEWSTACKSZ];
 
 // 기존 DOS 스택 위치
-unsigned short globFMDRVIntOldstackSeg;
-unsigned short globFMDRVIntOldstackOff;
-unsigned short globTickIntOldstackSeg;
-unsigned short globTickIntOldstackOff;
-unsigned short globDOSIntOldstackSeg;
-unsigned short globDOSIntOldstackOff;
+uint16 globFMDRVIntOldstackSeg;
+uint16 globFMDRVIntOldstackOff;
+uint16 globTickIntOldstackSeg;
+uint16 globTickIntOldstackOff;
+uint16 globDOSIntOldstackSeg;
+uint16 globDOSIntOldstackOff;
 
 /* an INTPACK structure used to store registers as set when INT is called */
 union INTPACK globFMDRVIntregs;
@@ -529,12 +529,12 @@ CHAINTOPREVHANDLER:
 	}
 }
 
-int MonitorFMDRV(void)
+uint8 MonitorFMDRV(void)
 {
 	void __far* FMDRVVect = 0;
-	static int busyCheck = AUDIO_BUSYCHECK_TERM;
+	static int8 busyCheck = AUDIO_BUSYCHECK_TERM;
 	int16 curVolume = 0;
-	int curcs = 0;
+	uint16 curcs = 0;
 	_asm
 	{
 		push ax
@@ -651,7 +651,7 @@ int MonitorFMDRV(void)
 	return 0;
 }
 
-int TryOverrideFMDRV(void)
+uint8 TryOverrideFMDRV(void)
 {
 	void __far* FMDRVVect = 0;
 	char __far* FMDRVMarker = 0;
@@ -659,7 +659,7 @@ int TryOverrideFMDRV(void)
 	int cmpSBOPL2 = -1;
 	int cmpFMDRV = -1;
 
-	int curcs = 0;
+	uint16 curcs = 0;
 
 	// TSR 안에서 21번 인터럽트(getvect/setvect)사용시에는 반드시 dosActiveFlag를 확인하여야 한다.
 	if (!(*dosActiveFlag))
@@ -844,7 +844,7 @@ void ProcessDOSInt_SetPlayStep(char far* execFileName)
 	return;
 }
 
-int TrackIdxBinarySearch(uint32 trackOffset[], int trackNum, uint32 target)
+uint8 TrackIdxBinarySearch(uint32 trackOffset[], uint8 trackNum, uint32 target)
 {
 	int8 idxLow = 0;
 	int8 IdxMid = 0;
@@ -871,14 +871,14 @@ int TrackIdxBinarySearch(uint32 trackOffset[], int trackNum, uint32 target)
 			return (IdxMid + 1);
 		}
 	}
-	return (-1);
+	return (0);
 }
 
-void ProcessDOSInt_BufChgFMTrack(unsigned long localFMTrackOffset)
+void ProcessDOSInt_BufChgFMTrack(uint32 localFMTrackOffset)
 {
-	int ret = 0;
+	int8 trackIdx = 0;
 
-	if (logicStatus.curPlayStep < PLAYSTEP_PREPARE || logicStatus.curPlayStep >= PLAYSTEP_MAX)
+	if (logicStatus.curPlayStep >= PLAYSTEP_MAX)
 	{
 		// 여기에 도달하면 코드에 문제가 있다는 소리다.
 		return;
@@ -896,19 +896,19 @@ void ProcessDOSInt_BufChgFMTrack(unsigned long localFMTrackOffset)
 	{
 	case PLAYSTEP_OPEN:
 		// 트랙을 바이너리 서치로 찾는다.
-		ret = TrackIdxBinarySearch(fmTrackOffsetOpening, fmTrackSongNumOpening, localFMTrackOffset);
-		if (ret >= 0)
-			bufChgFMTrack = ret;
+		trackIdx = TrackIdxBinarySearch(fmTrackOffsetOpening, fmTrackSongNumOpening, localFMTrackOffset);
+		if (trackIdx > 0)
+			bufChgFMTrack = trackIdx;
 		break;
 	case PLAYSTEP_MAIN:
-		ret = TrackIdxBinarySearch(fmTrackOffset, fmTrackSongNum, localFMTrackOffset);
-		if (ret >= 0)
-			bufChgFMTrack = ret;
+		trackIdx = TrackIdxBinarySearch(fmTrackOffset, fmTrackSongNum, localFMTrackOffset);
+		if (trackIdx > 0)
+			bufChgFMTrack = trackIdx;
 		break;
 	case PLAYSTEP_END:
-		ret = TrackIdxBinarySearch(fmTrackOffsetEnding, fmTrackSongNumEnding, localFMTrackOffset);
-		if (ret >= 0)
-			bufChgFMTrack = ret;
+		trackIdx = TrackIdxBinarySearch(fmTrackOffsetEnding, fmTrackSongNumEnding, localFMTrackOffset);
+		if (trackIdx > 0)
+			bufChgFMTrack = trackIdx;
 		break;
 	default:
 		bufChgFMTrack = 1;
@@ -980,7 +980,7 @@ void __interrupt __far MyDOSInterrupt(union INTPACK r)
 		unsigned long localFMTrackOffset = (globDOSIntregs.w.cx);
 		localFMTrackOffset <<= 16;
 		localFMTrackOffset += globDOSIntregs.w.dx;
-		ProcessDOSInt_BufChgFMTrack(localFMTrackOffset);
+		ProcessDOSInt_BufChgFMTrack((uint32)(globDOSIntregs.w.cx << 16 + globDOSIntregs.w.dx));
 	}
 
 	// 스택을 원래로 돌린다.
@@ -1024,9 +1024,9 @@ void begtextend(void)
 // 총합: (sizeof(RESDATA) + sizeof(BEGTEXT) + sizeof(PSP) + 15) / 16
 // sizeof(PSP)는 MS-DOS에서 256바이트로 고정되어 있으며, 
 // +15는 /16에 의해 버림 되는 수치를 보정하기 위해 더해준다.
-static unsigned short getResidentSize()
+static uint16 getResidentSize()
 {
-	unsigned short res = 0;
+	uint16 res = 0;
 	_asm
 	{
 		push ax                     // AX 보존
@@ -1046,9 +1046,9 @@ static unsigned short getResidentSize()
 }
 
 // 상위 메모리(upper memory) 데이터 세그먼트(upper_ds)를 구한다.
-static unsigned short getUpperDS(unsigned short upperseg)
+static uint16 getUpperDS(uint16 upperseg)
 {
-	unsigned short res = 0;
+	uint16 res = 0;
 	_asm
 	{
 		push ax                     // AX 보존
@@ -1065,7 +1065,7 @@ static unsigned short getUpperDS(unsigned short upperseg)
 }
 
 // UMB 영역의 여유 메모리 공간에서 세그먼트 할당 혹은 실패시 0 리턴
-__declspec(naked) static unsigned short allocseg(unsigned short sz) {
+__declspec(naked) static uint16 allocseg(uint16 sz) {
 	(void)sz;
 	_asm {
 		// http://www.techhelpmanual.com/826-accessing_upper_memory.html
@@ -1111,7 +1111,7 @@ __declspec(naked) static unsigned short allocseg(unsigned short sz) {
 
 static unsigned char umb_ident[9] = "OWNFMDRV";
 
-int SetupInterrupt(short newcs, short newds)
+int SetupInterrupt(uint16 newcs, uint16 newds)
 {
 	void(far interrupt * oldInt) = 0;
 	uint16 oldds;
@@ -1177,10 +1177,10 @@ int SetupInterrupt(short newcs, short newds)
 	return INTERRUPT_SUCCESS;
 }
 
-int StartTSR(void)
+int8 StartTSR(void)
 {
 	int i;
-	int16 residentcs;
+	uint16 residentcs;
 	uint16 old_pspseg;  // 기본 메모리 영역에서 사용할 프로그램의 PSP
 	uint16 upperseg;    // LOADHIGH를 사용하기 위해 구할 상위메모리 세그먼트
 	unsigned char far* mcbfptr;
@@ -1341,7 +1341,7 @@ int StartTSR(void)
 	return INTERRUPT_SUCCESS;	// 이 코드로는 도달하지 않지만, 없으면 컴파일이 안되므로 넣어둔다.
 }
 
-int IsTSRInstalled(void)
+int8 IsTSRInstalled(void)
 {
 	void(far interrupt * intFunc) = 0;
 	char far* intFuncMarker = 0;
@@ -1355,7 +1355,7 @@ int IsTSRInstalled(void)
 	return FALSE;
 }
 
-int UnloadTSR(void)
+int8 UnloadTSR(void)
 {
 	return INTERRUPT_SUCCESS;
 }

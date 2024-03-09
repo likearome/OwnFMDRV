@@ -184,7 +184,7 @@ int8 CDAudio_GetCDROMNum(int8 OUTPARAM* drive)
 	return (cdrom.h.bl);
 }
 
-int8 CDAudio_GetCDROMDriverVersion(uint8 OUTPARAM* majorver, uint8 OUTPARAM* minorver)
+int8 CDAudio_GetCDROMDriverVersion(int8 OUTPARAM* majorver, int8 OUTPARAM* minorver)
 {
 	union REGS cdrom;
 
@@ -202,7 +202,7 @@ int8 CDAudio_GetCDROMDriverVersion(uint8 OUTPARAM* majorver, uint8 OUTPARAM* min
 }
 
 
-int8 CDAudio_GetCDROMDriveList(int8 OUTPARAM driveLetter[])
+int8 CDAudio_GetCDROMDriveList(uint8 OUTPARAM driveLetter[])
 {
 	union REGS cdrom;
 	struct SREGS scdrom;
@@ -366,7 +366,7 @@ int8 CDAudio_TestCDROM(void)
 	uint32* trackStartPos;
 	uint8* trackStatus;
 
-	char* deviceLetter;
+	uint8* deviceLetter;
 
 	uint8 firstTrack;
 	uint8 lastTrack;
@@ -381,7 +381,7 @@ int8 CDAudio_TestCDROM(void)
 		return CDAUDIO_FAIL;
 	}
 
-	deviceLetter = (int8*)malloc(num * sizeof(int8));
+	deviceLetter = (uint8*)malloc(num * sizeof(uint8));
 	CDAudio_GetCDROMDriveList(deviceLetter);
 	for (j = 0; j < num; j++)
 	{

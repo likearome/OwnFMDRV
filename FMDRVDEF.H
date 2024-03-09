@@ -15,7 +15,7 @@
                unsigned _flags
 
 typedef unsigned char       bool;
-typedef char                int8;
+typedef signed char         int8;
 typedef short               int16;
 typedef long                int32;
 
