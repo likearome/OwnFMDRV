@@ -79,9 +79,15 @@ static int parseargv(struct argstruct* args) {
 
 			switch (opt) {
 			case 't':
-				if (arg == NULL) return OWNFMDRV_FAIL;
+				if (NULL == arg) return OWNFMDRV_FAIL;
 				// G드라이브가 타겟일 때 /t=G: 또는 t=G 모두 가능함
-				if ((arg[0] == 0) || (arg[2] != 0)) return OWNFMDRV_FAIL;
+				if ((arg[0] == 0) || (arg[1] != 0 && arg[2] != 0))
+				{
+					ErrorLog("option 't' must have trail option \"DriveLetter\"!\n");
+					ErrorLog("ex) /t=G:\n");
+					ErrorLog("Your Arg: [%s]\n", arg);
+					return OWNFMDRV_FAIL;
+				}
 				// 드라이브를 소문자로 변환
 				drv = arg[0];
 				if ((drv >= 'A') && (drv <= 'Z')) drv += ('a' - 'A');
@@ -89,11 +95,26 @@ static int parseargv(struct argstruct* args) {
 				if (args->targetcddrive >= MAX_CDDRIVE) return OWNFMDRV_FAIL;
 				break;
 			case 'v':
-				if (arg == NULL) return OWNFMDRV_FAIL;
+				if (NULL == arg) return OWNFMDRV_FAIL;
 				// /v=0 부터 v=255까지 가능함
-				if ((arg[0] == 0) || (arg[3] != 0)) return OWNFMDRV_FAIL;
+				if ((arg[0] == 0) || (arg[1] != 0 && arg[2] != 0 && arg[3] != 0))
+				{
+					ErrorLog("option 'v' must have trail option \"volume value\"!\n");
+					ErrorLog("ex) /v=50\n");
+					ErrorLog("Your Arg: [%s]\n", arg);
+					ErrorLog("Your Arg[0]: [%d]\n", arg[0]);
+					ErrorLog("Your Arg[1]: [%d]\n", arg[1]);
+					ErrorLog("Your Arg[2]: [%d]\n", arg[2]);
+					ErrorLog("Your Arg[3]: [%d]\n", arg[3]);
+					return OWNFMDRV_FAIL;
+				}
 				args->volume = (char)atoi(&arg[0]);
-				if (args->volume > 255) return OWNFMDRV_FAIL;
+				if (args->volume > 255)
+				{
+					ErrorLog("option 'v' must 0 <= \"volume value\" <= 255!\n");
+					ErrorLog("Your Arg: [%s]\n", arg);
+					return OWNFMDRV_FAIL;
+				}
 				break;
 			case 'u':  // 언로드
 				if (arg != NULL) return OWNFMDRV_FAIL;
