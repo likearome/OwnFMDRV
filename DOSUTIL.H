@@ -3,7 +3,6 @@
 
 extern void _puts(const char *str);
 extern void _putchar(char c);
-
-char *itoa_end(unsigned long val, char *p_end);
+extern void _puthex(unsigned hex);
 
 #endif

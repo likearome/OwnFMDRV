@@ -13,52 +13,52 @@
 
 typedef struct
 {
-        uint8   headerLength;
-        uint8   subunitCode;
-        uint8   command;
-        uint16  status;
-        uint8   reserved1[8];
-        uint8   addressingMode;
-        void far                *ptr;
-        uint32  length;
-        uint8   reserved2[4];
+	uint8   headerLength;
+	uint8   subunitCode;
+	uint8   command;
+	uint16  status;
+	uint8   reserved1[8];
+	uint8   addressingMode;
+	void far* ptr;
+	uint32  length;
+	uint8   reserved2[4];
 } RequestHeader;
 
 
 typedef struct
 {
-        uint8   subfunc;
-        uint32  driveState;
+	uint8   subfunc;
+	uint32  driveState;
 } DriveStatus;
 
 typedef struct
 {
-        uint8   subfunc;
-        uint8   firstTrack;
-        uint8   lastTrack;
-        uint32  leadoutTrack;
+	uint8   subfunc;
+	uint8   firstTrack;
+	uint8   lastTrack;
+	uint32  leadoutTrack;
 } DiskInfo;
 
 typedef struct
 {
-        uint8   subfunc;
-        uint32  volumeSize;
+	uint8   subfunc;
+	uint32  volumeSize;
 } VolumeSize;
 
 typedef struct
 {
-        uint8   subfunc;
-        uint8   trackNo;
-        uint32  startPos;
-        uint8   status;
+	uint8   subfunc;
+	uint8   trackNo;
+	uint32  startPos;
+	uint8   status;
 } TrackInfo;
 
 typedef struct
 {
-        uint8   subfunc;
-        uint16  audioStatus;
-        uint32  resumeStart;
-        uint32  resumeEnd;
+	uint8   subfunc;
+	uint16  audioStatus;
+	uint32  resumeStart;
+	uint32  resumeEnd;
 } AudioInfo;
 
 #pragma pack(pop)  // 바이트 얼라인 복원
@@ -143,26 +143,13 @@ static int8 CallCDROMDriver(int16 drive, uint8 command, void far* ptr, uint32 si
 		jnc CFLAG_SUCCESS
 		mov isFail, 1
 
-		CFLAG_SUCCESS:
-
+	CFLAG_SUCCESS:
 		pop es
-			pop cx
-			pop bx
-			pop ax
+		pop cx
+		pop bx
+		pop ax
 	}
-	//cdrom.h.ah = 0x15;
-	//cdrom.h.al = 0x10;
-	//cdrom.x.cx = drive;
 
-	//scdrom.es = _FP_SEG(reqHdrPtr);
-	//cdrom.x.bx = _FP_OFF(reqHdrPtr);
-
-	//int86x(0x2F, &cdrom, &cdrom, &scdrom);
-
-	//if (cdrom.x.cflag)
-	//{
-	//	return CDAUDIO_FAIL;
-	//}
 	if (isFail)
 	{
 		return CDAUDIO_FAIL;
@@ -180,7 +167,7 @@ static int8 CallCDROMDriver(int16 drive, uint8 command, void far* ptr, uint32 si
 }
 
 // ======== External Functions ========
-int8 CDAudio_GetCDROMNum(int8 OUTPARAM *drive)
+int8 CDAudio_GetCDROMNum(int8 OUTPARAM* drive)
 {
 	union REGS cdrom;
 
@@ -197,7 +184,7 @@ int8 CDAudio_GetCDROMNum(int8 OUTPARAM *drive)
 	return (cdrom.h.bl);
 }
 
-int8 CDAudio_GetCDROMDriverVersion(uint8 OUTPARAM *majorver, uint8 OUTPARAM *minorver)
+int8 CDAudio_GetCDROMDriverVersion(uint8 OUTPARAM* majorver, uint8 OUTPARAM* minorver)
 {
 	union REGS cdrom;
 
@@ -208,8 +195,8 @@ int8 CDAudio_GetCDROMDriverVersion(uint8 OUTPARAM *majorver, uint8 OUTPARAM *min
 
 	int86(0x02F, &cdrom, &cdrom);
 
-    (*majorver) = cdrom.h.bh;
-    (*minorver) = cdrom.h.bl;
+	(*majorver) = cdrom.h.bh;
+	(*minorver) = cdrom.h.bl;
 
 	return CDAUDIO_SUCCESS;
 }
@@ -232,7 +219,7 @@ int8 CDAudio_GetCDROMDriveList(int8 OUTPARAM driveLetter[])
 	return CDAUDIO_SUCCESS;
 }
 
-int8 CDAudio_GetDiskInfo(int8 INPARAM drive, uint8 OUTPARAM *firstTrack, uint8 OUTPARAM *lastTrack, uint32 OUTPARAM *leadoutTrack)
+int8 CDAudio_GetDiskInfo(int8 INPARAM drive, uint8 OUTPARAM* firstTrack, uint8 OUTPARAM* lastTrack, uint32 OUTPARAM* leadoutTrack)
 {
 	DiskInfo diskInfo;
 
@@ -272,174 +259,174 @@ int8 CDAudio_GetTrackInfo(int8 INPARAM drive, uint8 INPARAM firstTrack, uint8 IN
 
 int8 CDAudio_IsAudioTrack(uint8 status)
 {
-    if( 0 != (status & 0x40) )
-    {
-        // Data Track;
-        return CDAUDIO_FAIL;
-    }
+	if (0 != (status & 0x40))
+	{
+		// Data Track;
+		return CDAUDIO_FAIL;
+	}
 
-    return CDAUDIO_SUCCESS;
+	return CDAUDIO_SUCCESS;
 }
 
-int8 CDAudio_GetPlayInfo(int8 INPARAM drive, QChannelInfo OUTPARAM *qInfo)
+int8 CDAudio_GetPlayInfo(int8 INPARAM drive, QChannelInfo OUTPARAM* qInfo)
 {
-    if( !qInfo )
+	if (!qInfo)
 	{
 		return CDAUDIO_FAIL;
-    }
-    memset(qInfo, 0, sizeof(qInfo));
-    qInfo->notUsed=12;      //subfunc
-    CallCDROMDriver(drive, CMD_IOCTL_IN, qInfo, sizeof(*qInfo), 0);
+	}
+	memset(qInfo, 0, sizeof(qInfo));
+	qInfo->notUsed = 12;      //subfunc
+	CallCDROMDriver(drive, CMD_IOCTL_IN, qInfo, sizeof(*qInfo), 0);
 
-    return CDAUDIO_SUCCESS;
+	return CDAUDIO_SUCCESS;
 }
 
 uint32 CDAudio_Pos2SectorMSF(const uint8 min, const uint8 sec, const uint8 frame)
 {
 	const uint32 sector = (uint32)min * 60L * 75L +
-		                    (uint32)sec * 75L +
-		                    (uint32)frame;
+		(uint32)sec * 75L +
+		(uint32)frame;
 
 	return sector;
 }
 
 uint32 CDAudio_Pos2Sector(uint32 INPARAM pos)
 {
-    /*
-    return  (uint32)
-                    ((pos & 0x00FF0000) >> 16) * 60L * 75L +        // 분
-                    ((pos & 0x0000FF00) >> 8) * 75L +               // 초
-                    ((pos & 0x000000FF));                           // 프레임
-    */
+	/*
+	return  (uint32)
+					((pos & 0x00FF0000) >> 16) * 60L * 75L +        // 분
+					((pos & 0x0000FF00) >> 8) * 75L +               // 초
+					((pos & 0x000000FF));                           // 프레임
+	*/
 
-    const uint8 min = (uint8)(pos>>16) & 0xFF;
-    const uint8 sec = (uint8)(pos>>8) & 0xFF;
-    const uint8 frame = (uint8)(pos>>0) & 0xFF;
+	const uint8 min = (uint8)(pos >> 16) & 0xFF;
+	const uint8 sec = (uint8)(pos >> 8) & 0xFF;
+	const uint8 frame = (uint8)(pos >> 0) & 0xFF;
 
-    return CDAudio_Pos2SectorMSF(min, sec, frame);
+	return CDAudio_Pos2SectorMSF(min, sec, frame);
 }
 
 int8 CDAudio_Play(int8 INPARAM drive, uint32 INPARAM startPos, uint32 INPARAM endPos)
 {
-    // Pos를 Sector로 변환한다.
-    uint32 startSector = CDAudio_Pos2Sector(startPos);
-    uint32 endSector = CDAudio_Pos2Sector(endPos);
+	// Pos를 Sector로 변환한다.
+	uint32 startSector = CDAudio_Pos2Sector(startPos);
+	uint32 endSector = CDAudio_Pos2Sector(endPos);
 
-    return CDAudio_PlaySector(drive, startSector, endSector);
+	return CDAudio_PlaySector(drive, startSector, endSector);
 }
 
 int8 CDAudio_PlayTrack(int8 INPARAM drive, int8 INPARAM trackNo, uint8 INPARAM firstTrack, uint8 INPARAM lastTrack, uint32 INPARAM startPos[], uint32 INPARAM leadoutPos)
 {
-    uint32 trackStartPos = startPos[trackNo - firstTrack];
-    uint32 trackEndPos = 0;
-    
-    if( trackNo == lastTrack )
-    {
-        trackEndPos = leadoutPos;
-    }
-    else
-    {
+	uint32 trackStartPos = startPos[trackNo - firstTrack];
+	uint32 trackEndPos = 0;
+
+	if (trackNo == lastTrack)
+	{
+		trackEndPos = leadoutPos;
+	}
+	else
+	{
 		trackEndPos = startPos[trackNo + 1 - firstTrack];
 	}
 
-    return CDAudio_Play(drive, trackStartPos, trackEndPos);
+	return CDAudio_Play(drive, trackStartPos, trackEndPos);
 }
 
 int8 CDAudio_Pause(int8 INPARAM drive)
 {
-    return CallCDROMDriver(drive, CMD_STOP, 0, 0, 0);
+	return CallCDROMDriver(drive, CMD_STOP, 0, 0, 0);
 }
 
 int8 CDAudio_Resume(int8 INPARAM drive)
 {
-    return CallCDROMDriver(drive, CMD_RESUME, 0, 0, 0);
+	return CallCDROMDriver(drive, CMD_RESUME, 0, 0, 0);
 }
 
-int8 CDAudio_GetVolume(int8 INPARAM drive, AudioChannelSet OUTPARAM *channelInfo)
+int8 CDAudio_GetVolume(int8 INPARAM drive, AudioChannelSet OUTPARAM* channelInfo)
 {
-    if (!channelInfo)
-    {
-        return CDAUDIO_FAIL;
-    }
-    memset(channelInfo, 0, sizeof(channelInfo));
-    channelInfo->notUsed = 4;       //subfunc
-    CallCDROMDriver(drive, CMD_IOCTL_IN, channelInfo, sizeof(*channelInfo), 0);
+	if (!channelInfo)
+	{
+		return CDAUDIO_FAIL;
+	}
+	memset(channelInfo, 0, sizeof(channelInfo));
+	channelInfo->notUsed = 4;       //subfunc
+	CallCDROMDriver(drive, CMD_IOCTL_IN, channelInfo, sizeof(*channelInfo), 0);
 
-    return CDAUDIO_SUCCESS;
+	return CDAUDIO_SUCCESS;
 }
 
 int8 CDAudio_TestCDROM(void)
 {
-    int i, j;
-    int8 num, drive;
+	int i, j;
+	int8 num, drive;
 
-    DriveStatus drvStatus;
-    VolumeSize volumeSize;
-    int trackNum;
-    uint32 *trackStartPos;
-    uint8 *trackStatus;
+	DriveStatus drvStatus;
+	VolumeSize volumeSize;
+	int trackNum;
+	uint32* trackStartPos;
+	uint8* trackStatus;
 
-    char *deviceLetter;
+	char* deviceLetter;
 
-    uint8 firstTrack;
-    uint8 lastTrack;
-    uint32 leadoutTrack;
+	uint8 firstTrack;
+	uint8 lastTrack;
+	uint32 leadoutTrack;
 
-    // CDROM 갯수 확인
-    num = CDAudio_GetCDROMNum(&drive);
+	// CDROM 갯수 확인
+	num = CDAudio_GetCDROMNum(&drive);
 
-    if( !num )
-    {
+	if (!num)
+	{
 		printf("CD-ROM not exist.\n");
 		return CDAUDIO_FAIL;
-    }
+	}
 
-    deviceLetter = (int8 *)malloc(num * sizeof(int8));
-    CDAudio_GetCDROMDriveList(deviceLetter);
-    for(j = 0; j < num; j++)
-    {
-        printf("No. %d - CD-ROM (%c:\\)\n", j, 'A' + deviceLetter[j]);
+	deviceLetter = (int8*)malloc(num * sizeof(int8));
+	CDAudio_GetCDROMDriveList(deviceLetter);
+	for (j = 0; j < num; j++)
+	{
+		printf("No. %d - CD-ROM (%c:\\)\n", j, 'A' + deviceLetter[j]);
 
-        drive = deviceLetter[j];
+		drive = deviceLetter[j];
 
-        memset(&volumeSize, 0, sizeof(volumeSize));
-        volumeSize.subfunc = 8;
-        CallCDROMDriver(drive, CMD_IOCTL_IN, &volumeSize, sizeof(volumeSize), 0);
-        printf("CDROM Volume Size:%ld\n", volumeSize.volumeSize);
+		memset(&volumeSize, 0, sizeof(volumeSize));
+		volumeSize.subfunc = 8;
+		CallCDROMDriver(drive, CMD_IOCTL_IN, &volumeSize, sizeof(volumeSize), 0);
+		printf("CDROM Volume Size:%ld\n", volumeSize.volumeSize);
 
-        memset(&drvStatus, 0, sizeof(drvStatus));
-        drvStatus.subfunc = 6;
-        CallCDROMDriver(drive, CMD_IOCTL_IN, &drvStatus, sizeof(drvStatus), 0);
+		memset(&drvStatus, 0, sizeof(drvStatus));
+		drvStatus.subfunc = 6;
+		CallCDROMDriver(drive, CMD_IOCTL_IN, &drvStatus, sizeof(drvStatus), 0);
 
-        printf("CDROM status : 0x%04X\n", drvStatus.driveState);
+		printf("CDROM status : 0x%04X\n", drvStatus.driveState);
 
-        CDAudio_GetDiskInfo(drive, &firstTrack, &lastTrack, &leadoutTrack);
+		CDAudio_GetDiskInfo(drive, &firstTrack, &lastTrack, &leadoutTrack);
 
-        printf("FirstTrack: %d\n", firstTrack);
-        printf("LastTrack: %d\n", lastTrack);
-        printf("LeadOutTrack: %ld (0x%08lX)\n", leadoutTrack, leadoutTrack);
+		printf("FirstTrack: %d\n", firstTrack);
+		printf("LastTrack: %d\n", lastTrack);
+		printf("LeadOutTrack: %ld (0x%08lX)\n", leadoutTrack, leadoutTrack);
 
-        trackNum = (lastTrack - firstTrack + 1);
-        trackStartPos = (uint32 *)malloc(trackNum * sizeof(uint32));
-        trackStatus = (uint8 *)malloc(trackNum * sizeof(uint8));
+		trackNum = (lastTrack - firstTrack + 1);
+		trackStartPos = (uint32*)malloc(trackNum * sizeof(uint32));
+		trackStatus = (uint8*)malloc(trackNum * sizeof(uint8));
 
-        CDAudio_GetTrackInfo(drive, firstTrack, lastTrack, trackStartPos, trackStatus);
-        for(i = 0; i < trackNum; i++ )
-        {
-                printf("\nTrack No. %d Info:\n", i + firstTrack);
-                printf("StartPos: %ld(0x%08lX)\n", trackStartPos[i], trackStartPos[i]);
-                printf("Status: %d(0x%02X)\n", trackStatus[i], trackStatus[i]);
-        }
-
-
-        //Stop(drive);
-        //Play(drive, trackStartPos[3], trackStartPos[4]);
-
-        free(trackStartPos);
-        free(trackStatus);
-    }
-    free(deviceLetter);
+		CDAudio_GetTrackInfo(drive, firstTrack, lastTrack, trackStartPos, trackStatus);
+		for (i = 0; i < trackNum; i++)
+		{
+			printf("\nTrack No. %d Info:\n", i + firstTrack);
+			printf("StartPos: %ld(0x%08lX)\n", trackStartPos[i], trackStartPos[i]);
+			printf("Status: %d(0x%02X)\n", trackStatus[i], trackStatus[i]);
+		}
 
 
-    return CDAUDIO_SUCCESS;
+		//Stop(drive);
+		//Play(drive, trackStartPos[3], trackStartPos[4]);
+
+		free(trackStartPos);
+		free(trackStatus);
+	}
+	free(deviceLetter);
+
+
+	return CDAUDIO_SUCCESS;
 }

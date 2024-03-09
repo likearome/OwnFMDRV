@@ -32,53 +32,53 @@
 
 enum FMDRV_COMMAND_TYPE
 {
-        FMDRV_COMMAND_0 = 0,
-        FMDRV_INIT = FMDRV_COMMAND_0,
-        FMDRV_COMMAND_1,
-        FMDRV_PLAY = FMDRV_COMMAND_1,
-        FMDRV_COMMAND_2,
-        FMDRV_STOP = FMDRV_COMMAND_2,
-        FMDRV_COMMAND_3,
-        FMDRV_GETSTATUS = FMDRV_COMMAND_3,
-        FMDRV_COMMAND_4,
-        FMDRV_SETLOOP = FMDRV_COMMAND_4,
-        FMDRV_COMMAND_5,
-        FMDRV_COMMAND_6,
-        FMDRV_COMMAND_7,
-        FMDRV_COMMAND_8,
-        FMDRV_COMMAND_9,
+	FMDRV_COMMAND_0 = 0,
+	FMDRV_INIT = FMDRV_COMMAND_0,
+	FMDRV_COMMAND_1,
+	FMDRV_PLAY = FMDRV_COMMAND_1,
+	FMDRV_COMMAND_2,
+	FMDRV_STOP = FMDRV_COMMAND_2,
+	FMDRV_COMMAND_3,
+	FMDRV_GETSTATUS = FMDRV_COMMAND_3,
+	FMDRV_COMMAND_4,
+	FMDRV_SETLOOP = FMDRV_COMMAND_4,
+	FMDRV_COMMAND_5,
+	FMDRV_COMMAND_6,
+	FMDRV_COMMAND_7,
+	FMDRV_COMMAND_8,
+	FMDRV_COMMAND_9,
 
-        FMDRV_COMMAND_80 = 0x80,
-        FMDRV_COMMAND_81,
-        FMDRV_COMMAND_82,
-        FMDRV_COMMAND_83,
+	FMDRV_COMMAND_80 = 0x80,
+	FMDRV_COMMAND_81,
+	FMDRV_COMMAND_82,
+	FMDRV_COMMAND_83,
 
-        FMDRV_COMMAND_F0 = 0xF0,
-        FMDRV_COMMAND_F1,
-        FMDRV_COMMAND_F2,
-        FMDRV_COMMAND_F3,
-        FMDRV_COMMAND_F4,
+	FMDRV_COMMAND_F0 = 0xF0,
+	FMDRV_COMMAND_F1,
+	FMDRV_COMMAND_F2,
+	FMDRV_COMMAND_F3,
+	FMDRV_COMMAND_F4,
 
-        FMDRV_COMMAND_FF = 0xFF,
-        FMDRV_TERMINATE = FMDRV_COMMAND_FF,
+	FMDRV_COMMAND_FF = 0xFF,
+	FMDRV_TERMINATE = FMDRV_COMMAND_FF,
 };
 
 typedef struct
 {
-        uint8 isFMDRVSet : 1;
+	uint8 isFMDRVSet : 1;
 
-		uint8 isTermSignal : 1;
-		uint8 isForceTermSignal : 1;
-        uint8 isTickLock : 1;
+	uint8 isTermSignal : 1;
+	uint8 isForceTermSignal : 1;
+	uint8 isTickLock : 1;
 
-        uint8 isCDLoop : 1;
-        uint8 isPlay : 1;
-        uint8 isFMPlay : 1;
-        uint8 isCDBusy : 1;
+	uint8 isCDLoop : 1;
+	uint8 isPlay : 1;
+	uint8 isFMPlay : 1;
+	uint8 isCDBusy : 1;
 
-		uint8 isBufferChangeStyleExist : 1;
+	uint8 isBufferChangeStyleExist : 1;
 
-        uint8 curPlayStep : 2;
+	uint8 curPlayStep : 2;
 } LogicStatus;
 
 /////////////////////////////////////////
@@ -147,7 +147,7 @@ static void __declspec(naked) mymemcpy(void far* dst, void far* src, unsigned in
 	(void)dst;
 	(void)src;
 	(void)len;
-	_asm 
+	_asm
 	{
 		//스택에 레지스터와 플래그 값을 보존한다.
 		push ds				// 우선 작업 전에 ds 를 보존한다.
@@ -158,7 +158,7 @@ static void __declspec(naked) mymemcpy(void far* dst, void far* src, unsigned in
 		rep movsw          // 2바이트(1워드)씩, dx:si를 es:di에 복사한다.
 		adc cx, cx         // cx에 나머지를 구한다.
 		rep movsb          // 나머지만큼 1바이트씩 복사(movsb)한다.
-		
+
 		// 보존했던 레지스터/플래그와 ds를 복원한다.
 		popf
 		pop ds
@@ -253,14 +253,14 @@ static void __declspec(naked) mysetvect(int8 interruptnum, void (__interrupt __f
 static unsigned short freeseg(unsigned short segm)
 {
 	unsigned short retval = 0;
-	_asm 
+	_asm
 	{
 		mov ah, 49h   // 49h 세그먼트 free MS-DOS 2+
 		mov es, segm  // 주어진 세그먼트 값을 es에 입력
 		int 21h
 		jc failed
 		xor ax, ax
-	failed :
+		failed :
 		mov retval, ax
 	}
 	return retval;
@@ -353,7 +353,7 @@ void ProcessFMDRVInt(void)
 
 			// FM 사운드를 끈다.
 			{
-				void (__interrupt __far  * oldFmdrvInt)() = _MK_FP(globData.prev_fmdrv_handler_seg, globData.prev_fmdrv_handler_off);
+				void (__interrupt __far * oldFmdrvInt)() = _MK_FP(globData.prev_fmdrv_handler_seg, globData.prev_fmdrv_handler_off);
 				_asm
 				{
 					push ax
@@ -494,7 +494,8 @@ void __interrupt __far MyFMDRVInterrupt(union INTPACK r)
 	/* copy interrupt registers into globIntregs so the int handler can access them without using any stack */
 	mymemcpy(&globFMDRVIntregs, &r, sizeof(union INTPACK));
 	/* set stack to my custom memory */
-	_asm {
+	_asm
+	{
 		cli //인터럽트를 중지하여, 다른 인터럽트가 스택 변환중 문제가 발생하지 않도록 조치한다.
 		mov globFMDRVIntOldstackSeg, SS
 		mov globFMDRVIntOldstackOff, SP
@@ -764,7 +765,8 @@ void __interrupt __far MyTickInterrupt(union INTPACK r)
 	/* copy interrupt registers into globIntregs so the int handler can access them without using any stack */
 	mymemcpy(&globTickIntregs, &r, sizeof(union INTPACK));
 	/* set stack to my custom memory */
-	_asm {
+	_asm
+	{
 		cli //인터럽트를 중지하여, 다른 인터럽트가 스택 변환중 문제가 발생하지 않도록 조치한다.
 		mov globTickIntOldstackSeg, SS
 		mov globTickIntOldstackOff, SP
@@ -801,7 +803,7 @@ void __interrupt __far MyTickInterrupt(union INTPACK r)
 		_asm cli;
 		// 모든 인터럽트들을 제자리에 되돌려놓는다.
 		// 66번 FMDRV 인터럽트는 내꺼가 설치되었을 때에만 제자리에 되돌려놓는다.
-		if(logicStatus.isFMDRVSet) mysetvect(FMDRV_INTERRUPT, _MK_FP(globData.prev_fmdrv_handler_seg, globData.prev_fmdrv_handler_off));
+		if (logicStatus.isFMDRVSet) mysetvect(FMDRV_INTERRUPT, _MK_FP(globData.prev_fmdrv_handler_seg, globData.prev_fmdrv_handler_off));
 		mysetvect(TICK_INTERRUPT, _MK_FP(globData.prev_tick_handler_seg, globData.prev_tick_handler_off));
 		mysetvect(DOS_INTERRUPT, _MK_FP(globData.prev_dos_handler_seg, globData.prev_dos_handler_off));
 
@@ -883,7 +885,7 @@ void ProcessDOSInt_BufChgFMTrack(unsigned long localFMTrackOffset)
 		// 여기에 도달하면 코드에 문제가 있다는 소리다.
 		return;
 	}
-	
+
 	if (!isBufferChangeStyle[logicStatus.curPlayStep])
 		return;
 
@@ -954,7 +956,8 @@ void __interrupt __far MyDOSInterrupt(union INTPACK r)
 	/* copy interrupt registers into globIntregs so the int handler can access them without using any stack */
 	mymemcpy(&globDOSIntregs, &r, sizeof(union INTPACK));
 	/* set stack to my custom memory */
-	_asm {
+	_asm
+	{
 		cli //인터럽트를 중지하여, 다른 인터럽트가 스택 변환중 문제가 발생하지 않도록 조치한다.
 		mov globDOSIntOldstackSeg, SS
 		mov globDOSIntOldstackOff, SP
@@ -983,7 +986,7 @@ void __interrupt __far MyDOSInterrupt(union INTPACK r)
 	}
 
 	// 스택을 원래로 돌린다.
-	_asm 
+	_asm
 	{
 		cli //인터럽트를 중지하여, 다른 인터럽트가 스택 변환중 문제가 발생하지 않도록 조치한다.
 
@@ -1070,7 +1073,7 @@ __declspec(naked) static unsigned short allocseg(unsigned short sz) {
 		// http://www.techhelpmanual.com/826-accessing_upper_memory.html
 		// http://www.techhelpmanual.com/523-dos_fn_5801h__set_memory_allocation_strategy.html
 		mov ax, 5800h // DOS 2.11+ - 메모리 할당 전략 GET/SET 
-					  // AL = 0으로 메모리 할당 전략 GET
+		// AL = 0으로 메모리 할당 전략 GET
 
 		int 21h       // 할당 전략이 AX에 입력됨
 		push ax       // 현재 할당 전략을 스택에 보존
@@ -1164,8 +1167,8 @@ int SetupInterrupt(short newcs, short newds)
 	oldInt = _dos_getvect(DOS_INTERRUPT);
 	SET_DS_TO_NEWDS;
 	{
-	globData.prev_dos_handler_seg = _FP_SEG(oldInt);
-	globData.prev_dos_handler_off = _FP_OFF(oldInt);
+		globData.prev_dos_handler_seg = _FP_SEG(oldInt);
+		globData.prev_dos_handler_off = _FP_OFF(oldInt);
 	}
 	RESTORE_DS_FROM_OLDDS;
 	// 보내주는 세그먼트로 교체
@@ -1173,7 +1176,7 @@ int SetupInterrupt(short newcs, short newds)
 
 	_enable();
 
-    return INTERRUPT_SUCCESS;
+	return INTERRUPT_SUCCESS;
 }
 
 int StartTSR(void)
@@ -1192,7 +1195,7 @@ int StartTSR(void)
 	residentcs = (FP_SEG((void far*) & MyFMDRVInterrupt));
 
 	// PSP 세그먼트 확보
-	_asm 
+	_asm
 	{
 		mov ah, 62h          // 현재 PSP 주소를 주세요
 		int 21h              // DOS 인터럽트
@@ -1259,7 +1262,7 @@ int StartTSR(void)
 				mov ds, ax				// 해당 세그먼트를 DS에 설정
 				mov es, upperseg		// 복사할 PSP의 뚜껑 세그먼트 위치를 ES에 설정
 				rep movsw				// 워드 단위로 DS:SI -> ES:DI 복사. 패러그래프 단위로 복사하므로 나머지가 남지 않음.
-				
+
 				// 레지스터 복원
 				popf
 				pop di
@@ -1273,7 +1276,8 @@ int StartTSR(void)
 	}
 	// PSP의 환경 값을 free한다. (PSP의 2C 오프셋에 env 세그먼트가 위치한다)
 	InfoLog("Free the environment.\n");
-	_asm {
+	_asm
+	{
 		// PSP 세그먼트를 가져온다.
 		// 상위메모리로 복사되었더라도 2C의 값은 그대로이므로 free에 문제는 없다.
 		mov es, word ptr[globData + GLOB_DATOFF_PSPSEG]
@@ -1310,7 +1314,8 @@ int StartTSR(void)
 
 		// 새 PSP를 상위 메모리에 세팅한다.
 		InfoLog("Set new PSP to upper memory.\n");
-		_asm {
+		_asm
+		{
 			mov bx, upperseg    // BX: 새 PSP의 위치
 			mov ah, 50h         // INT 21,50 - PSP 세그먼트 SET
 			int 21h
@@ -1328,13 +1333,14 @@ int StartTSR(void)
 	// 자기자신을 TSR로 만들고, TSR에 필요없는 메모리를 해제한다.
 	// 이를 통해 libc 및 프로그램 초기화용 코드들이 모두 버려진다.
 	// 점유 메모리 용량을 계산하는 방법은 getResidentSize()의 주석으로 잘 설명돼 있다.
-	_asm {
+	_asm
+	{
 		mov ax, 3100h			// AH = 31 로 terminate+stay resident, 즉 TSR을 요청한다. AL = 0은 다른 프로그램에서 참조할 종료 코드이다.
 		mov dx, residentsize	// DX = 상주할 메모리 용량(패러그래프 단위)
 		int 21h
 	}
 
-    return INTERRUPT_SUCCESS;	// 이 코드로는 도달하지 않지만, 없으면 컴파일이 안되므로 넣어둔다.
+	return INTERRUPT_SUCCESS;	// 이 코드로는 도달하지 않지만, 없으면 컴파일이 안되므로 넣어둔다.
 }
 
 int IsTSRInstalled(void)
