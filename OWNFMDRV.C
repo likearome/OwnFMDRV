@@ -9,37 +9,37 @@
 #include "INIPARSE.H"
 #include "MAINARGS.H"
 
-#define OWNFMDRV_SUCCESS        (int)(0)
-#define OWNFMDRV_FAIL           (int)(0xFF)
+#define OWNFMDRV_SUCCESS		(int)(0)
+#define OWNFMDRV_FAIL			(int)(-1)
 
-#define DEFAULT_INI                     ("OWNFMDRV.INI")
-#define INI_OPEN                        ("OPEN")
-#define INI_END                         ("END")
-#define INI_TMSF                        ("TMSF")
-#define INI_TMSF_SEP            ('-')
-#define INI_TMSF_TIMESEP        (":")
-#define INI_PLAYMARGIN          ("PLAYMARGIN")
+#define DEFAULT_INI				("OWNFMDRV.INI")
+#define INI_OPEN				("OPEN")
+#define INI_END					("END")
+#define INI_TMSF				("TMSF")
+#define INI_TMSF_SEP			('-')
+#define INI_TMSF_TIMESEP		(":")
+#define INI_PLAYMARGIN			("PLAYMARGIN")
 
-#define INI_OPEN_MUSIC_FILENAME                 ("OPEN_MUSIC_FILENAME")
-#define INI_MAIN_MUSIC_FILENAME                 ("MAIN_MUSIC_FILENAME")
-#define INI_END_MUSIC_FILENAME                  ("END_MUSIC_FILENAME")
-#define INI_OPEN_MUSIC_NUM						("OPEN_MUSIC_NUM")
-#define INI_MAIN_MUSIC_NUM						("MAIN_MUSIC_NUM")
-#define INI_END_MUSIC_NUM						("END_MUSIC_NUM")
-#define INI_OPEN_EXE_FILENAME                   ("OPEN_EXE_FILENAME")
-#define INI_MAIN_EXE_FILENAME                   ("MAIN_EXE_FILENAME")
-#define INI_END_EXE_FILENAME                    ("END_EXE_FILENAME")
+#define INI_OPEN_MUSIC_FILENAME	("OPEN_MUSIC_FILENAME")
+#define INI_MAIN_MUSIC_FILENAME	("MAIN_MUSIC_FILENAME")
+#define INI_END_MUSIC_FILENAME	("END_MUSIC_FILENAME")
+#define INI_OPEN_MUSIC_NUM		("OPEN_MUSIC_NUM")
+#define INI_MAIN_MUSIC_NUM		("MAIN_MUSIC_NUM")
+#define INI_END_MUSIC_NUM		("END_MUSIC_NUM")
+#define INI_OPEN_EXE_FILENAME	("OPEN_EXE_FILENAME")
+#define INI_MAIN_EXE_FILENAME	("MAIN_EXE_FILENAME")
+#define INI_END_EXE_FILENAME	("END_EXE_FILENAME")
 
-#define DEFAULT_OPEN_EXE_FILENAME               ("OPEN.EXE")
-#define DEFAULT_MAIN_EXE_FILENAME               ("MAIN.EXE")
-#define DEFAULT_END_EXE_FILENAME                ("END.EXE")
+#define DEFAULT_OPEN_EXE_FILENAME	("OPEN.EXE")
+#define DEFAULT_MAIN_EXE_FILENAME	("MAIN.EXE")
+#define DEFAULT_END_EXE_FILENAME	("END.EXE")
 
-#define DEFAULT_VOLUME                  (0x64)  // == 100
-#define DEFAULT_FRAME_TO_SEC    (100)
+#define DEFAULT_VOLUME				(0x64)  // == 100
+#define DEFAULT_FRAME_TO_SEC		(100)
 
-#define MUSIC_FILE_ALIGNSIZE            2
-#define MUSIC_FILE_MUSICNUM_SIZE        2
-#define MUSIC_FILE_METAINFO_SIZE        6
+#define MUSIC_FILE_ALIGNSIZE		2
+#define MUSIC_FILE_MUSICNUM_SIZE	2
+#define MUSIC_FILE_METAINFO_SIZE	6
 
 // 전역변수들의 실제 위치는 INTERUP.C 에 있다.
 // RESDATA segment에 모여 있다.

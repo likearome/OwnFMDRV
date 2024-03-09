@@ -9,26 +9,24 @@
 #include "FMDRVDEF.H"
 #include "DOSUTIL.H"
 
-#define FMDRV_INTERRUPT 0x66
-#define TICK_INTERRUPT  0x1C    // 0x08은 실제 타이머 인터럽트, 0x1C는 0x08로부터 호출되는 유저 타이머 인터럽트
-#define DOS_INTERRUPT   0x21
+#define FMDRV_INTERRUPT			0x66
+#define TICK_INTERRUPT			0x1C    // 0x08은 실제 타이머 인터럽트, 0x1C는 0x08로부터 호출되는 유저 타이머 인터럽트
+#define DOS_INTERRUPT			0x21
 
-#define FMDRV_MARKER_OFFSET                     (0x08L)
-#define FMDRV_MARKER_SIZE						7
+#define FMDRV_MARKER_OFFSET		(0x08L)
+#define FMDRV_MARKER_SIZE		7
 
 // 문자열은 반드시 _DATA 세그먼트에 저장되기 때문에,
 // TSR에서 메모리를 컷할 때 잘려나가버린다. (RDATA에 문자열 저장 불가)
 // 그러므로 문자열을 포인터가 아닌! 전역 배열변수에서 저장할 수 있도록 하여야 한다.
-#define FMDRV_MARKER                            {'O', 'P', 'L', 'D', 'R', 'V', '\0'}
-#define SBDRV_MARKER                            {'S', 'B', ' ', 'D', 'R', 'V', '\0'}
+#define FMDRV_MARKER			{'O', 'P', 'L', 'D', 'R', 'V', '\0'}
+#define SBDRV_MARKER			{'S', 'B', ' ', 'D', 'R', 'V', '\0'}
 
-#define TSRSIZE_HEURISTIC                       0
+#define FMDRV_PASSTHROUGH		(0)
+#define FMDRV_NO_PASSTHROUGH	(1)
 
-#define FMDRV_PASSTHROUGH                       (0)
-#define FMDRV_NO_PASSTHROUGH					(1)
-
-#define AUDIO_BUSYCHECK_TERM					8               // CD가 Busy상태인지를 체크하는 텀. 8254타이머 칩 구조상, 17에 약 1초
-#define AUDIO_STARTSTEP                         2               // 플레이 시작부터 볼륨이 정상수치가 되는데까지의 텀. 17에 약 1초
+#define AUDIO_BUSYCHECK_TERM	8               // CD가 Busy상태인지를 체크하는 텀. 8254타이머 칩 구조상, 17에 약 1초
+#define AUDIO_STARTSTEP			2               // 플레이 시작부터 볼륨이 정상수치가 되는데까지의 텀. 17에 약 1초
 
 enum FMDRV_COMMAND_TYPE
 {
