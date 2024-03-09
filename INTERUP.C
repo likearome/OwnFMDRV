@@ -116,6 +116,9 @@ int8 isBufferChangeStyle[PLAYSTEP_MAX];
 char openMusicFileName[20];
 char mainMusicFileName[20];
 char endMusicFileName[20];
+uint16 openMusicFileHandle;
+uint16 mainMusicFileHandle;
+uint16 endMusicFileHandle;
 char openExeFileName[20];
 char mainExeFileName[20];
 char endExeFileName[20];
@@ -135,6 +138,7 @@ uint32 fmTrackOffsetEnding[MAX_CDAUDIOTRACK + 1];
 ////////////////////////////////////////
 // Interrupt parameters
 uint8 far* dosActiveFlag;
+uint8 skipDOSChain = FALSE;
 
 const char FMDRV_Marker_Str[FMDRV_MARKER_SIZE] = FMDRV_MARKER;
 const char SBDRV_Marker_Str[FMDRV_MARKER_SIZE] = SBDRV_MARKER;
@@ -302,7 +306,7 @@ void ProcessFMDRVInt(void)
 		if (bufChgFMTrack >= 0)
 		{
 			curFMTrack = bufChgFMTrack;
-			bufChgFMTrack = -1;
+			//bufChgFMTrack = -1;
 		}
 
 		if (PLAYSTEP_OPEN == logicStatus.curPlayStep)
@@ -356,10 +360,8 @@ void ProcessFMDRVInt(void)
 				{
 					push ax
 					mov ax, 200h
-				}
-				(*oldFmdrvInt)();
-				_asm
-				{
+					pushf
+					call dword ptr oldFmdrvInt
 					pop ax
 				}
 			}
@@ -799,6 +801,9 @@ CHAINTOPREVHANDLER:
 
 void ProcessDOSInt_SetPlayStep(char far* execFileName)
 {
+	if (!execFileName)
+		return;
+
 	// 1. is OpenFile
 	if (!mystrstr(execFileName, openExeFileName))
 	{
@@ -855,9 +860,9 @@ uint8 TrackIdxBinarySearch(uint32 trackOffset[], uint8 trackNum, uint32 target)
 	return (0);
 }
 
-void ProcessDOSInt_BufChgFMTrack(uint32 localFMTrackOffset)
+void ProcessDOSInt_BufChgFMTrack(uint16 fileHandle, uint32 localFMTrackOffset)
 {
-	int8 trackIdx = 0;
+	uint8 trackIdx = 0;
 
 	if (logicStatus.curPlayStep >= PLAYSTEP_MAX)
 	{
@@ -868,33 +873,126 @@ void ProcessDOSInt_BufChgFMTrack(uint32 localFMTrackOffset)
 	if (!isBufferChangeStyle[logicStatus.curPlayStep])
 		return;
 
-	// 파일이 무엇이냐와 상관없이 작동하게 되겠지만,
-	// 실제 음악연주 코드를 보면 fseek -> fread -> playMusic 이 바로 진행되므로,
-	// 엉뚱한 파일을 잘못 읽어서 트랙이 변경될 문제가 없다.
-	bufChgFMTrack = 1;
-
 	switch (logicStatus.curPlayStep)
 	{
 	case PLAYSTEP_OPEN:
-		// 트랙을 바이너리 서치로 찾는다.
-		trackIdx = TrackIdxBinarySearch(fmTrackOffsetOpening, fmTrackSongNumOpening, localFMTrackOffset);
-		if (trackIdx > 0)
-			bufChgFMTrack = trackIdx;
+		if (fileHandle == openMusicFileHandle)
+		{
+			// 트랙을 바이너리 서치로 찾는다.
+			trackIdx = TrackIdxBinarySearch(fmTrackOffsetOpening, fmTrackSongNumOpening, localFMTrackOffset);
+			if (trackIdx > 0)
+				bufChgFMTrack = trackIdx;
+			else
+				bufChgFMTrack = -1;
+		}
 		break;
 	case PLAYSTEP_MAIN:
-		trackIdx = TrackIdxBinarySearch(fmTrackOffset, fmTrackSongNum, localFMTrackOffset);
-		if (trackIdx > 0)
-			bufChgFMTrack = trackIdx;
+		_asm
+		{
+			jmp SKIPTSRSIG
+			TSRSIG db 'MFQW'
+			SKIPTSRSIG:
+		}
+		if (fileHandle == mainMusicFileHandle)
+		{
+			trackIdx = TrackIdxBinarySearch(fmTrackOffset, fmTrackSongNum, localFMTrackOffset);
+			if (trackIdx > 0)
+				bufChgFMTrack = trackIdx;
+			else
+				bufChgFMTrack = -1;
+		}
 		break;
 	case PLAYSTEP_END:
-		trackIdx = TrackIdxBinarySearch(fmTrackOffsetEnding, fmTrackSongNumEnding, localFMTrackOffset);
-		if (trackIdx > 0)
-			bufChgFMTrack = trackIdx;
+		if (fileHandle == endMusicFileHandle)
+		{
+			trackIdx = TrackIdxBinarySearch(fmTrackOffsetEnding, fmTrackSongNumEnding, localFMTrackOffset);
+			if (trackIdx > 0)
+				bufChgFMTrack = trackIdx;
+			else
+				bufChgFMTrack = -1;
+		}
 		break;
 	default:
-		bufChgFMTrack = 1;
 		break;
 	}
+	return;
+}
+
+uint16 InDOSInt_OpenFile(uint8 flag, char far* filename)
+{
+	void (__interrupt __far * oldDOSInt)() = _MK_FP(globData.prev_dos_handler_seg, globData.prev_dos_handler_off);
+	uint16 filename_seg = _FP_SEG(filename);
+	uint16 filename_off = _FP_OFF(filename);
+
+	bool isErr = FALSE;
+	uint16 retval = 0;
+	_asm
+	{
+		push ds
+		push dx
+		push ax
+
+		mov ax, filename_seg
+		mov ds, ax
+		mov dx, filename_off
+		mov ah, 3Dh
+		mov al, flag
+		pushf
+		call dword ptr oldDOSInt
+		jnc success
+		mov isErr, TRUE
+
+	success :
+		mov retval, ax
+		pop ax
+		pop dx
+		pop ds
+	}
+	if (isErr == TRUE)
+	{
+		_puthex(retval);
+	}
+	return retval;
+}
+
+void ProcessDOSInt_SetMusicFileHandle(uint8 flag, char far* filename)
+{
+	if (!filename)
+		return;
+
+	// fopen 플래그 의미가 읽기전용(AL==0)이거나 읽고쓰기(AL==2)일 떄에만 후킹한다.
+	if (0 != globDOSIntregs.h.al && 2 != globDOSIntregs.h.al)
+		return;
+
+	// 1. is OpenMusicFile
+	if (isBufferChangeStyle[PLAYSTEP_OPEN] &&
+		0 == openMusicFileHandle && !mystrstr(filename, openMusicFileName))
+	{
+		// OpenMusicFile
+		openMusicFileHandle = InDOSInt_OpenFile(flag, filename);
+		globDOSIntregs.w.ax = openMusicFileHandle;
+		skipDOSChain = TRUE;
+		return;
+	}
+	// 2. is MainMusicFile
+	else if (isBufferChangeStyle[PLAYSTEP_MAIN] && 
+		0 == mainMusicFileHandle && !mystrstr(filename, mainMusicFileName))
+	{
+		// MainMusicFile
+		mainMusicFileHandle = InDOSInt_OpenFile(flag, filename);
+		globDOSIntregs.w.ax = mainMusicFileHandle;
+		skipDOSChain = TRUE;
+	}
+	// 3. is EndMusicFile
+	else if (isBufferChangeStyle[PLAYSTEP_END] && 
+		0 == endMusicFileHandle && !mystrstr(filename, endMusicFileName))
+	{
+		// EndMusicFile
+		endMusicFileHandle = InDOSInt_OpenFile(flag, filename);
+		globDOSIntregs.w.ax = endMusicFileHandle;
+		skipDOSChain = TRUE;
+	}
+
 	return;
 }
 
@@ -921,7 +1019,8 @@ void __interrupt __far MyDOSInterrupt(union INTPACK r)
 		pop ax          // AX 복원
 	}
 
-	if (r.h.ah != 0x4B && !(r.h.ah == 0x42 && TRUE == logicStatus.isBufferChangeStyleExist)) goto CHAINTOPREVHANDLER;
+	skipDOSChain = FALSE;
+	if (r.h.ah != 0x4B && !(TRUE == logicStatus.isBufferChangeStyleExist && (r.h.ah == 0x42 || r.h.ah == 0x3D) )) goto CHAINTOPREVHANDLER;
 
 	// 파라미터로 입력받은 (실제로는 스택에 저장된) 인터럽트 레지스터 상태값 r을 별도 전역변수에 보존한다.
 	// 그래야 이 인터럽트를 실행하고 바뀐 레지스터값이 아닌, 첫 호출자(caller)가 보냈던 인터럽트를 그대로
@@ -949,12 +1048,26 @@ void __interrupt __far MyDOSInterrupt(union INTPACK r)
 	{
 		ProcessDOSInt_SetPlayStep(_MK_FP(globDOSIntregs.w.ds, globDOSIntregs.w.dx));
 	}
-	else if (globDOSIntregs.h.ah == 0x42 && TRUE == logicStatus.isBufferChangeStyleExist)	// fseek
+	else if (TRUE == logicStatus.isBufferChangeStyleExist)	// fseek
 	{
-		unsigned long localFMTrackOffset = (globDOSIntregs.w.cx);
-		localFMTrackOffset <<= 16;
-		localFMTrackOffset += globDOSIntregs.w.dx;
-		ProcessDOSInt_BufChgFMTrack((uint32)(globDOSIntregs.w.cx << 16 + globDOSIntregs.w.dx));
+		switch (globDOSIntregs.h.ah)
+		{
+		case 0x42:
+			// fseek 플래그 의미가 파일 맨 처음(AL==0)일 때에만 후킹한다.
+			if (0 == globDOSIntregs.h.al)
+			{
+				uint32 localFMTrackOffset = (globDOSIntregs.w.cx);
+				localFMTrackOffset <<= 16;
+				localFMTrackOffset += globDOSIntregs.w.dx;
+				ProcessDOSInt_BufChgFMTrack(globDOSIntregs.w.bx, localFMTrackOffset);
+			}
+			break;
+		case 0x3D:
+			ProcessDOSInt_SetMusicFileHandle(globDOSIntregs.h.al, _MK_FP(globDOSIntregs.w.ds, globDOSIntregs.w.dx));
+			break;
+		default:
+			break;
+		}
 	}
 
 	// 스택을 원래로 돌린다.
@@ -972,7 +1085,8 @@ void __interrupt __far MyDOSInterrupt(union INTPACK r)
 	mymemcpy(&r, &globDOSIntregs, sizeof(union INTPACK));
 
 CHAINTOPREVHANDLER:
-	_mvchain_intr(MK_FP(globData.prev_dos_handler_seg, globData.prev_dos_handler_off));
+	if (FALSE == skipDOSChain)
+		_mvchain_intr(MK_FP(globData.prev_dos_handler_seg, globData.prev_dos_handler_off));
 }
 
 /////////////////////////////////////////
