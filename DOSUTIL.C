@@ -54,7 +54,7 @@ void _puthex(unsigned hex)
 	char hexval;
 	_putchar('0'); _putchar('x');
 
-	hexval = (hex & 0xF0) >> 8;
+	hexval = (hex & 0xF0) >> 4;
 	if (hexval < 10)
 		_putchar('0' + hexval);
 	else
