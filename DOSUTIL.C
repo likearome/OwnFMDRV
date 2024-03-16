@@ -37,7 +37,7 @@ void _putchar(char c)
 		int 29h;
 	}
 
-	if (r.h.al == '\n')
+	if (c == '\n')
 	{
 		_asm
 		{
@@ -66,4 +66,15 @@ void _puthex(unsigned hex)
 	else
 		_putchar('A' + hexval - 10);
 	return;
+}
+
+void _reset_cursor(void)
+{
+	_asm
+	{
+		mov ah, 2h
+		mov bh, 0
+		mov dx, 0
+		int 10h
+	}
 }
