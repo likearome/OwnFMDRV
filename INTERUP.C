@@ -944,6 +944,7 @@ uint16 InDOSInt_OpenFile(uint8 flag, char far* filename)
 	}
 	if (isErr == TRUE)
 	{
+		globDOSIntregs.w.flags |= INTR_CF;
 		_puthex(retval);
 	}
 	return retval;
