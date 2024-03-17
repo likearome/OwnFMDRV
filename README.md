@@ -1,7 +1,7 @@
 # OwnFMDRV
 코에이 IBM MS-DOS게임들의 BGM을 CD-DA로 바꾸는 프로그램
 # 알려진 이슈
-- 현재 실기기 혹은 86Box/PCem 등의 실기기 에뮬레이션에서 특정 CD 드라이버 사용시 게임이 멈추는 현상이 있습니다.
+- "DosBOX에서는 문제없음" 현재 실기기 혹은 86Box/PCem 등의 실기기 에뮬레이션에서 특정 CD 드라이버 사용시 게임이 멈추는 현상이 있습니다.
 - 현상이 해결될 때까지 가급적 UDVD2.SYS (FreeDOS) 혹은 XDVD2.SYS (UDVD2.SYS 제작자의 최신작) 드라이버의 사용을 권장합니다.
 # 사용 방법
 - FMDRV.COM가 있는 게임과 같은 디렉토리에 OwnFMDRV.EXE와 OwnFMDRV.INI를 복사합니다.
