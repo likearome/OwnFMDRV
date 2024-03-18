@@ -166,7 +166,7 @@ OwnFMDRV.INI에 추가하셔서 사용하실 수 있습니다.
   - 가장 정확한 IBM DOS Interrupt 매뉴얼
 - https://bochs.sourceforge.io/techspec/PORTS.LST
   - 가장 정확한 IBM DOS "알려진(well-known)" 장치들의 사용 포트 번호
-- https://www.vogons.org/viewtopic.php?p=577721#p577721
+- https://www.vogons.org/viewtopic.php?p=1231161#p1231161
   - 윈도우95/98에서 이미지 탑재하고 도스 게임에서 CD-DA 듣는 법
 ## 라이브러리
 - https://github.com/benhoyt/inih
