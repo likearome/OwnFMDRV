@@ -1,5 +1,17 @@
 # OwnFMDRV
 코에이 IBM MS-DOS게임들의 BGM을 CD-DA로 바꾸는 프로그램
+- 삼국지 영걸전의 DOSBOX-X 실행 영상
+  - [![Video Label](http://img.youtube.com/vi/hhRVDfjSdKA/0.jpg)](https://youtu.be/hhRVDfjSdKA?t=0s)
+
+- 삼국지 3의 DOSBOX-X 실행 영상
+  - [![Video Label](http://img.youtube.com/vi/9q0iQJApq7M/0.jpg)](https://youtu.be/9q0iQJApq7M?t=0s)
+
+- 삼국지 4의 실제기기 윈도우 98에서 실제 CD를 가지고 실행한 영상
+  - [![Video Label](http://img.youtube.com/vi/J4qxaqdfRV8/0.jpg)](https://youtu.be/J4qxaqdfRV8?t=0s)
+
+- 삼국지 4의 실제기기 윈도우 98에서 데몬 툴을 사용하여 실행한 영상
+  - [![Video Label](http://img.youtube.com/vi/9yDCxxPBXms/0.jpg)](https://youtu.be/9yDCxxPBXms?t=0s)
+
 # 알려진 이슈
 - "DosBOX에서는 문제없음" 현재 실기기 혹은 86Box/PCem 등의 실기기 에뮬레이션에서 특정 CD 드라이버 사용시 게임이 멈추는 현상이 있습니다.
 - 현상이 해결될 때까지 가급적 UDVD2.SYS (FreeDOS) 혹은 XDVD2.SYS (UDVD2.SYS 제작자의 최신작) 드라이버의 사용을 권장합니다.
