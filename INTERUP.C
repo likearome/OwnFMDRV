@@ -10,7 +10,7 @@
 #include "DOSUTIL.H"
 
 #define FMDRV_INTERRUPT			0x66
-#define TICK_INTERRUPT			0x1C    // 0x08은 실제 타이머 인터럽트, 0x1C는 0x08로부터 호출되는 유저 타이머 인터럽트
+#define TICK_INTERRUPT			0x08    // 0x08은 실제 타이머 인터럽트. TSR은 08을 직접 후킹해야 한다.
 #define DOS_INTERRUPT			0x21
 
 #define FMDRV_MARKER_OFFSET		(0x08L)

@@ -33,7 +33,7 @@ struct tsrshareddata {
 	/*offset*/
 	/*  0 */ unsigned short prev_fmdrv_handler_seg; /* seg:off of the previous 66 (FMDRV) handler */
 	/*  2 */ unsigned short prev_fmdrv_handler_off;
-	/*  4 */ unsigned short prev_tick_handler_seg; /* seg:off of the previous 1C (CLOCK-TICK) handler */
+	/*  4 */ unsigned short prev_tick_handler_seg; /* seg:off of the previous 08 (CLOCK-TICK) handler */
 	/*  6 */ unsigned short prev_tick_handler_off;
 	/*  8 */ unsigned short prev_dos_handler_seg; /* seg:off of the previous 21 (DOS) handler */
 	/* 10 */ unsigned short prev_dos_handler_off;
