@@ -30,7 +30,6 @@ void _puts(const char* str)
 
 void _putchar(char c)
 {
-	union REGPACK r;
 	_asm
 	{
 		mov AL, c;
