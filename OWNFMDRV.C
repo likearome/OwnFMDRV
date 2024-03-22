@@ -1,6 +1,7 @@
 #include <dos.h>
 #include <string.h>
 #include <stdlib.h>
+#include <ctype.h>
 
 #include "chint.h"
 #include "FMDRVDEF.H"
@@ -75,7 +76,7 @@ static int parseargv(struct argstruct* args) {
 				return OWNFMDRV_FAIL;
 			}
 			// 이번 옵션을 소문자로 변환
-			if ((opt >= 'A') && (opt <= 'Z')) opt += ('a' - 'A');
+			opt = tolower(opt);
 
 			switch (opt) {
 			case 't':
@@ -89,9 +90,7 @@ static int parseargv(struct argstruct* args) {
 					return OWNFMDRV_FAIL;
 				}
 				// 드라이브를 소문자로 변환
-				drv = arg[0];
-				if ((drv >= 'A') && (drv <= 'Z')) drv += ('a' - 'A');
-				args->targetcddrive = arg[0] - 'a';
+				drv = tolower(arg[0]);
 				if (args->targetcddrive >= MAX_CDDRIVE) return OWNFMDRV_FAIL;
 				break;
 			case 'v':
@@ -826,8 +825,6 @@ int main(int argc, char** argv)
 			}
 		}
 	}
-
-	CDAudio_SetVolume(cddrive, orginalCDVolume);
 
 	StartTSR();
 	// Unreachable code
