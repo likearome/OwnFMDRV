@@ -25,11 +25,9 @@ enum PlayStep
 #define GLOB_DATOFF_PREV_FMDRV_HANDLER_OFF		2
 #define GLOB_DATOFF_PREV_TICK_HANDLER_SEG		4
 #define GLOB_DATOFF_PREV_TICK_HANDLER_OFF		6
-#define GLOB_DATOFF_PREV_MPX_HANDLER_SEG		8
-#define GLOB_DATOFF_PREV_MPX_HANDLER_OFF		10
-#define GLOB_DATOFF_PREV_DOS_HANDLER_SEG		12
-#define GLOB_DATOFF_PREV_DOS_HANDLER_OFF		14
-#define GLOB_DATOFF_PSPSEG						16
+#define GLOB_DATOFF_PREV_DOS_HANDLER_SEG		8
+#define GLOB_DATOFF_PREV_DOS_HANDLER_OFF		10
+#define GLOB_DATOFF_PSPSEG						12
 
 struct tsrshareddata {
 	/*offset*/
@@ -37,12 +35,10 @@ struct tsrshareddata {
 	/*  2 */ unsigned short prev_fmdrv_handler_off;
 	/*  4 */ unsigned short prev_tick_handler_seg; /* seg:off of the previous 1C (CLOCK-TICK) handler */
 	/*  6 */ unsigned short prev_tick_handler_off;
-	/*  8 */ unsigned short prev_mpx_handler_seg; /* seg:off of the previous 2F (MultiPleX) handler */
-	/* 10 */ unsigned short prev_mpx_handler_off;
-	/* 12 */ unsigned short prev_dos_handler_seg; /* seg:off of the previous 21 (DOS) handler */
-	/* 14 */ unsigned short prev_dos_handler_off;
+	/*  8 */ unsigned short prev_dos_handler_seg; /* seg:off of the previous 21 (DOS) handler */
+	/* 10 */ unsigned short prev_dos_handler_off;
 
-	/* 16 */ unsigned short pspseg;    /* segment of the program's PSP block */
+	/* 12 */ unsigned short pspseg;    /* segment of the program's PSP block */
 };
 
 extern struct tsrshareddata globData;

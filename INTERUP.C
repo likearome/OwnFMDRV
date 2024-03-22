@@ -11,7 +11,6 @@
 
 #define FMDRV_INTERRUPT			0x66
 #define TICK_INTERRUPT			0x1C    // 0x08은 실제 타이머 인터럽트, 0x1C는 0x08로부터 호출되는 유저 타이머 인터럽트
-#define MPX_INTERRUPT			0x2F
 #define DOS_INTERRUPT			0x21
 
 #define FMDRV_MARKER_OFFSET		(0x08L)
@@ -140,7 +139,6 @@ uint32 fmTrackOffsetEnding[MAX_CDAUDIOTRACK + 1];
 // Interrupt parameters
 uint8 far* dosActiveFlag;
 uint8 skipDOSChain = FALSE;
-uint8 skipMPXChain = FALSE;
 
 const char FMDRV_Marker_Str[FMDRV_MARKER_SIZE] = FMDRV_MARKER;
 const char SBDRV_Marker_Str[FMDRV_MARKER_SIZE] = SBDRV_MARKER;
@@ -274,7 +272,6 @@ static uint16 freeseg(uint16 segm)
 // 인터럽트 핸들러에서 사용하기 위한 스택
 static uint8 FMDRVIntStack[NEWSTACKSZ];
 static uint8 TickIntStack[NEWSTACKSZ];
-static uint8 MPXIntStack[NEWSTACKSZ];
 static uint8 DOSIntStack[NEWSTACKSZ];
 
 // 기존 DOS 스택 위치
@@ -282,15 +279,12 @@ uint16 globFMDRVIntOldstackSeg;
 uint16 globFMDRVIntOldstackOff;
 uint16 globTickIntOldstackSeg;
 uint16 globTickIntOldstackOff;
-uint16 globMPXIntOldstackSeg;
-uint16 globMPXIntOldstackOff;
 uint16 globDOSIntOldstackSeg;
 uint16 globDOSIntOldstackOff;
 
 /* an INTPACK structure used to store registers as set when INT is called */
 union INTPACK globFMDRVIntregs;
 union INTPACK globTickIntregs;
-union INTPACK globMPXIntregs;
 union INTPACK globDOSIntregs;
 
 void ProcessFMDRVInt(void)
@@ -545,13 +539,11 @@ uint8 MonitorFMDRV(void)
 		pop ax
 	}
 
+	// Vect가 바뀌는 것을 감시하고 있다가 바뀌면 FMDRV.COM이 내려갔음을 의미한다.
+	// 그러므로 우리도 프로세스를 끝낸다.
 	// TSR 안에서 21번 인터럽트(getvect/setvect)사용시에는 반드시 dosActiveFlag를 확인하여야 한다.
-	// 특정 CD-ROM 드라이버들은 내부에서 DOS active flag를 확인해야만 정상 동작하는 케이스가 있는 듯 하다.
-	// 그러므로 CD-ROM 접근시에도 확인한다.
 	if (!(*dosActiveFlag))
 	{
-		// Vect가 바뀌는 것을 감시하고 있다가 바뀌면 FMDRV.COM이 내려갔음을 의미한다.
-		// 그러므로 우리도 프로세스를 끝낸다.
 		_asm cli;
 		FMDRVVect = mygetvect(FMDRV_INTERRUPT);
 		_asm sti;
@@ -562,96 +554,94 @@ uint8 MonitorFMDRV(void)
 			{
 				CDAudio_Stop(cddrive);
 				logicStatus.isPlay = FALSE;
-				logicStatus.isCDBusy = FALSE;
 			}
 			return 1;
 		}
+	}
 
-		// 아니면 음악CD 작업을 이어받아 진행한다.
-		if (busyCheck < 0)
-		{
-			busyCheck = AUDIO_BUSYCHECK_TERM;
-			logicStatus.isCDBusy = (CDAUDIO_BUSY == CDAudio_CheckCDBusy(cddrive)) ? 1 : 0;
-		}
-		else
-		{
-			busyCheck--;
-		}
+	// 아니면 음악CD 작업을 이어받아 진행한다.
+	if (busyCheck < 0)
+	{
+		busyCheck = AUDIO_BUSYCHECK_TERM;
+		logicStatus.isCDBusy = (CDAUDIO_BUSY == CDAudio_CheckCDBusy(cddrive)) ? 1 : 0;
+	}
+	else
+	{
+		busyCheck--;
+	}
 
-		// 반복
-		if (logicStatus.isCDLoop)
+	// 반복
+	if (logicStatus.isCDLoop)
+	{
+		// 노래를 연주해야 되지만 연주를 안하는 등, CD가 바쁘지 않을 때에는
+		// 다시 연주를 시작해준다.
+		if (logicStatus.isPlay && !logicStatus.isCDBusy)
 		{
-			// 노래를 연주해야 되지만 연주를 안하는 등, CD가 바쁘지 않을 때에는
-			// 다시 연주를 시작해준다.
-			if (logicStatus.isPlay && !logicStatus.isCDBusy)
-			{
-				CDAudio_SetVolume(cddrive, orginalCDVolume);
-				CDAudio_PlaySector(cddrive, fromSector + playMargin, toSector);
-				busyCheck = AUDIO_BUSYCHECK_TERM;
-				logicStatus.isCDBusy = 1;
-			}
-		}
-		else
-		{
-			// 루프가 아닐 경우에는 stop을 마킹한다.
-			if (logicStatus.isPlay && !logicStatus.isCDBusy)
-			{
-				stopAudioCDStep = 1;
-			}
-		}
-
-		if (logicStatus.isPlay && 0 <= startAudioCDStep)
-		{
-			// int32로 캐스팅하면 libc의 4바이트 함수가 들어오기 때문에 실행이 실패한다.
-			curVolume = (int16)orginalCDVolume * (AUDIO_STARTSTEP - startAudioCDStep) / AUDIO_STARTSTEP;
-			CDAudio_SetVolume(cddrive, (uint8)curVolume);
-			startAudioCDStep--;
-		}
-
-		if (startAudioCD)
-		{
-			startAudioCD = 0;
-
-			CDAudio_SetVolume(cddrive, 0);
+			CDAudio_SetVolume(cddrive, orginalCDVolume);
 			CDAudio_PlaySector(cddrive, fromSector + playMargin, toSector);
 			busyCheck = AUDIO_BUSYCHECK_TERM;
-			logicStatus.isCDBusy = TRUE;
-			logicStatus.isPlay = TRUE;
+			logicStatus.isCDBusy = 1;
 		}
-
-		if (stopAudioCDStep)
+	}
+	else
+	{
+		// 루프가 아닐 경우에는 stop을 마킹한다.
+		if (logicStatus.isPlay && !logicStatus.isCDBusy)
 		{
-			if (logicStatus.isPlay)
-			{
-				stopAudioCDStep--;
-				if (0 < orgStopAudioCDStep)
-				{
-					// int32로 캐스팅하면 libc의 4바이트 함수가 들어오기 때문에 실행이 실패한다.
-					curVolume = (int16)orginalCDVolume - ((int16)orginalCDVolume * (orgStopAudioCDStep - stopAudioCDStep + 1) / orgStopAudioCDStep) * 4 / 3;
-					if (curVolume < 0) curVolume = 0;
-					CDAudio_SetVolume(cddrive, (uint8)curVolume);
-				}
-				if (stopAudioCDStep <= 0)
-				{
-					CDAudio_SetVolume(cddrive, 0);
-					CDAudio_Stop(cddrive);
-					stopAudioCDStep = 0;
-					logicStatus.isPlay = FALSE;
-					logicStatus.isCDBusy = FALSE;
-					curFMTrack = -1;
-					orgStopAudioCDStep = 0;
-					startAudioCDStep = 0;
+			stopAudioCDStep = 1;
+		}
+	}
 
-					if (!startAudioCD)
-					{
-						curPlayTrack = -1;
-					}
+	if (logicStatus.isPlay && 0 <= startAudioCDStep)
+	{
+		// int32로 캐스팅하면 libc의 4바이트 함수가 들어오기 때문에 실행이 실패한다.
+		curVolume = (int16)orginalCDVolume * (AUDIO_STARTSTEP - startAudioCDStep) / AUDIO_STARTSTEP;
+		CDAudio_SetVolume(cddrive, (uint8)curVolume);
+		startAudioCDStep--;
+	}
+
+	if (startAudioCD)
+	{
+		startAudioCD = 0;
+
+		CDAudio_SetVolume(cddrive, 0);
+		CDAudio_PlaySector(cddrive, fromSector + playMargin, toSector);
+		busyCheck = AUDIO_BUSYCHECK_TERM;
+		logicStatus.isCDBusy = TRUE;
+		logicStatus.isPlay = TRUE;
+	}
+
+	if (stopAudioCDStep)
+	{
+		if (logicStatus.isPlay)
+		{
+			stopAudioCDStep--;
+			if (0 < orgStopAudioCDStep)
+			{
+				// int32로 캐스팅하면 libc의 4바이트 함수가 들어오기 때문에 실행이 실패한다.
+				curVolume = (int16)orginalCDVolume - ((int16)orginalCDVolume * (orgStopAudioCDStep - stopAudioCDStep + 1) / orgStopAudioCDStep) * 4 / 3;
+				if (curVolume < 0) curVolume = 0;
+				CDAudio_SetVolume(cddrive, (uint8)curVolume);
+			}
+			if (stopAudioCDStep <= 0)
+			{
+				CDAudio_SetVolume(cddrive, 0);
+				CDAudio_Stop(cddrive);
+				stopAudioCDStep = 0;
+				logicStatus.isPlay = FALSE;
+				curFMTrack = -1;
+				orgStopAudioCDStep = 0;
+				startAudioCDStep = 0;
+
+				if (!startAudioCD)
+				{
+					curPlayTrack = -1;
 				}
 			}
-			else
-			{
-				stopAudioCDStep = 0;
-			}
+		}
+		else
+		{
+			stopAudioCDStep = 0;
 		}
 	}
 	return 0;
@@ -796,7 +786,6 @@ void __interrupt __far MyTickInterrupt(union INTPACK r)
 		// 66번 FMDRV 인터럽트는 내꺼가 설치되었을 때에만 제자리에 되돌려놓는다.
 		if (logicStatus.isFMDRVSet) mysetvect(FMDRV_INTERRUPT, _MK_FP(globData.prev_fmdrv_handler_seg, globData.prev_fmdrv_handler_off));
 		mysetvect(TICK_INTERRUPT, _MK_FP(globData.prev_tick_handler_seg, globData.prev_tick_handler_off));
-		mysetvect(MPX_INTERRUPT, _MK_FP(globData.prev_mpx_handler_seg, globData.prev_mpx_handler_off));
 		mysetvect(DOS_INTERRUPT, _MK_FP(globData.prev_dos_handler_seg, globData.prev_dos_handler_off));
 
 		//_puthex(freeseg(globData.pspseg));
@@ -808,87 +797,6 @@ void __interrupt __far MyTickInterrupt(union INTPACK r)
 
 //CHAINTOPREVHANDLER:
 	_mvchain_intr(MK_FP(globData.prev_tick_handler_seg, globData.prev_tick_handler_off));
-}
-
-void ProcessMPXInt(void)
-{
-	void (__interrupt __far * oldMPXInt)() = _MK_FP(globData.prev_mpx_handler_seg, globData.prev_mpx_handler_off);
-	(void)oldMPXInt;
-}
-
-void __interrupt __far MyMPXInterrupt(union INTPACK r)
-{
-	// ### 아래에서 스택 포인터를 바꾸기 때문에,
-	// 여기에 로컬 변수(스택할당)을 선언한 뒤에 스택 포인터 바꾸고 난 위치에서 사용하면 안된다.
-	// 
-	// 인터럽트가 바뀌었는지를 검사하는 정적 문자열을 설정한다.
-	// 그리고 DS도 교체한다.
-	_asm
-	{
-		jmp SKIPTSRSIG
-		TSRSIG db 'MyMP'
-		SKIPTSRSIG:
-
-		push ax         // AX 보존
-		mov ax, ds;
-
-		// CS:glob_newds에 보존된 우리 데이터 세그먼트를 ds에 덮어쓰기
-		mov ax, cs:glob_newds
-		mov ds, ax
-
-		pop ax          // AX 복원
-	}
-
-	//if (r.h.ah != 0x0B && r.h.ah != 0x35)
-	{
-		//_putchar('M'); _putchar('P'); _putchar('X'); _putchar('['); _puthex(r.h.ah);  _putchar(']'); _putchar('\n');
-	}
-
-	skipMPXChain = FALSE;
-	if (r.h.ah != 0x15)
-		goto CHAINTOPREVHANDLER;
-
-	// 파라미터로 입력받은 (실제로는 스택에 저장된) 인터럽트 레지스터 상태값 r을 별도 전역변수에 보존한다.
-	// 그래야 이 인터럽트를 실행하고 바뀐 레지스터값이 아닌, 첫 호출자(caller)가 보냈던 인터럽트를 그대로
-	// 체인된 다음 인터럽트에 보내줄 수 있다.
-	mymemcpy(&globMPXIntregs, &r, sizeof(union INTPACK));
-	// 스택 포인터를 전역변수 공간으로 이동한다.
-	_asm
-	{
-		cli //인터럽트를 중지하여, 다른 인터럽트가 스택 변환중 문제가 발생하지 않도록 조치한다.
-		mov globMPXIntOldstackSeg, SS
-		mov globMPXIntOldstackOff, SP
-
-		// 현재 DS를 스택 세그먼트에 덮어쓴다.
-		mov ax, ds
-		mov ss, ax
-
-		// 스택 포인터에 newstack의 맨 뒷부분 바로 앞 (+NEWSTACKSZ-2) 위치를 덮어쓴다.
-		mov sp, offset MPXIntStack + NEWSTACKSZ - 2
-		sti // 인터럽트를 재개한다.
-	}
-
-	// ***** 여기에 실제로 실행할 기능을 호출한다.
-	// 스택이 바뀐 이후이므로 r은 쓸 수 없다. globIntreg를 사용해야 한다.
-	ProcessMPXInt();
-
-	// 스택을 원래로 돌린다.
-	_asm
-	{
-		cli //인터럽트를 중지하여, 다른 인터럽트가 스택 변환중 문제가 발생하지 않도록 조치한다.
-
-		// 원래의 스택 포인터를 반환한다.
-		mov SS, globMPXIntOldstackSeg
-		mov SP, globMPXIntOldstackOff
-		sti // 인터럽트를 재개한다.
-	}
-
-	// r의 레지스터를 모두 복원하여 이 값이 함수를 빠져나간 뒤에 정상적으로 세팅될 수 있도록 한다.
-	mymemcpy(&r, &globMPXIntregs, sizeof(union INTPACK));
-
-CHAINTOPREVHANDLER:
-	if (FALSE == skipMPXChain)
-		_mvchain_intr(MK_FP(globData.prev_mpx_handler_seg, globData.prev_mpx_handler_off));
 }
 
 void ProcessDOSInt_SetPlayStep(char far* execFileName)
@@ -1106,11 +1014,6 @@ void __interrupt __far MyDOSInterrupt(union INTPACK r)
 		pop ax          // AX 복원
 	}
 
-	if (r.h.ah != 0x0B && r.h.ah != 0x35)
-	{
-		//_putchar('D'); _putchar('O'); _putchar('S'); _putchar('['); _puthex(r.h.ah);  _putchar(']'); _putchar('\n');
-	}
-	
 	skipDOSChain = FALSE;
 	if (r.h.ah != 0x4B && !(TRUE == logicStatus.isBufferChangeStyleExist && (r.h.ah == 0x42 || r.h.ah == 0x3D) )) goto CHAINTOPREVHANDLER;
 
@@ -1324,7 +1227,6 @@ int SetupInterrupt(uint16 newcs, uint16 newds)
 
 		memset((void*)&FMDRVIntStack, 0, sizeof(char) * NEWSTACKSZ);
 		memset((void*)&TickIntStack, 0, sizeof(char) * NEWSTACKSZ);
-		memset((void*)&MPXIntStack, 0, sizeof(char) * NEWSTACKSZ);
 		memset((void*)&DOSIntStack, 0, sizeof(char) * NEWSTACKSZ);
 	}
 	RESTORE_DS_FROM_OLDDS;
@@ -1342,18 +1244,7 @@ int SetupInterrupt(uint16 newcs, uint16 newds)
 	// 보내주는 세그먼트로 교체
 	_dos_setvect(TICK_INTERRUPT, MK_FP(newcs, _FP_OFF(MyTickInterrupt)));
 
-	// 2. 제대로 된 Unload 및 CD 디바이스 접근을 위해 멀티플렉스 인터럽트를 후킹한다.
-	oldInt = _dos_getvect(MPX_INTERRUPT);
-	SET_DS_TO_NEWDS;
-	{
-		globData.prev_mpx_handler_seg = _FP_SEG(oldInt);
-		globData.prev_mpx_handler_off = _FP_OFF(oldInt);
-	}
-	RESTORE_DS_FROM_OLDDS;
-	// 보내주는 세그먼트로 교체
-	_dos_setvect(MPX_INTERRUPT, MK_FP(newcs, _FP_OFF(MyMPXInterrupt)));
-
-	// 3. 프로세스 확인을 위해 DOS 인터럽트를 후킹한다.
+	// 2. 프로세스 확인을 위해 DOS 인터럽트를 후킹한다.
 	oldInt = _dos_getvect(DOS_INTERRUPT);
 	SET_DS_TO_NEWDS;
 	{
@@ -1477,7 +1368,6 @@ int8 StartTSR(void)
 	}
 	// 인터럽트들을 세팅한다.
 	SetupInterrupt(residentcs, glob_newds);
-	CDAudio_SetVolume(cddrive, orginalCDVolume);
 
 	InfoLog("Turn self into a TSR keeping %d paragraphs of memory\n", residentsize);
 
