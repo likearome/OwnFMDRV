@@ -303,8 +303,9 @@ inline void FMDRVReturn(int8 highbyte, int8 lowbyte)
 
 void ProcessFMDRVInt(void)
 {
-	static int8 curCDPlayTrack = 0;
+	static int8 curCDPlayTrack = -1;	// CDPlayTrack은 0부터 시작하기 때문에, 초기값이 0이면 안된다.
 	static int8 curFMPlayTrack = 0;
+	static int8 prevPlayStep = PLAYSTEP_MAX;
 
 	static uint32 fromSector = 0;
 	static uint32 toSector = 0;
@@ -334,6 +335,14 @@ void ProcessFMDRVInt(void)
 			curFMPlayTrack = bufChgFMTrack;
 			//bufChgFMTrack = -1;
 		}
+		if (prevPlayStep != logicStatus.curPlayStep)
+		{
+			prevPlayStep = logicStatus.curPlayStep;
+			curCDPlayTrack = -1;	// CDPlayTrack은 0부터 시작하기 때문에, 초기값이 0이면 안된다.
+
+			fromSector = 0;
+			toSector = 0;
+		}
 		switch (logicStatus.curPlayStep)
 		{
 		case PLAYSTEP_OPEN: curTrackMap = trackMapOpening; break;
@@ -344,7 +353,7 @@ void ProcessFMDRVInt(void)
 
 		if (NULL != curTrackMap)
 		{
-			diffTrack = (curFMPlayTrack != curTrackMap[curFMPlayTrack].track);
+			diffTrack = (curCDPlayTrack != curTrackMap[curFMPlayTrack].track);
 			curCDPlayTrack = curTrackMap[curFMPlayTrack].track;
 
 			diffSector = (fromSector != curTrackMap[curFMPlayTrack].fromSector);
@@ -353,38 +362,41 @@ void ProcessFMDRVInt(void)
 			toSector = curTrackMap[curFMPlayTrack].toSector;
 		}
 
-		if (curCDPlayTrack > 0 && !diffTrack && !diffSector)
+		if (curCDPlayTrack >= 0)
 		{
-			// 현재 연주중인 곡과 같은 곡일 때에는 계속 연주하게 놔둔다.
-			FMPassThrough = FMDRV_NO_PASSTHROUGH;
-			FMDRVReturn(curFMPlayTrack, TRUE);
-		}
-		else if (curCDPlayTrack > 0)
-		{
-			// 새로운 CD트랙을 연주한다.
-			// 이를 위해 변수들을 모두 초기화한다.
-			logicStatus.isCDLoop = FALSE;	// 루프 플래그도 끈다.
-			logicStatus.isFMPlay = FALSE;	// FM플레이도 끈다.
-			FMPassThrough = FMDRV_NO_PASSTHROUGH;
-
-			// FM 사운드를 끈다.
+			if (!diffTrack && !diffSector)
 			{
-				void (__interrupt __far * oldFmdrvInt)() = _MK_FP(globData.prev_fmdrv_handler_seg, globData.prev_fmdrv_handler_off);
-				_asm
-				{
-					push ax
-					mov ax, 0x200	// AH: 0x02 (FMDRV_STOP), AL: 0x00 (지금 즉시 종료)
-					pushf
-					call dword ptr oldFmdrvInt
-					pop ax
-				}
+				// 현재 연주중인 곡과 같은 곡일 때에는 계속 연주하게 놔둔다.
+				FMPassThrough = FMDRV_NO_PASSTHROUGH;
+				FMDRVReturn(curFMPlayTrack, TRUE);
 			}
+			else
+			{
+				// 새로운 CD트랙을 연주한다.
+				// 이를 위해 변수들을 모두 초기화한다.
+				logicStatus.isCDLoop = FALSE;	// 루프 플래그도 끈다.
+				logicStatus.isFMPlay = FALSE;	// FM플레이도 끈다.
+				FMPassThrough = FMDRV_NO_PASSTHROUGH;
 
-			CDAudio_PlaySector(cddrive, fromSector + playMargin, toSector);
-			CDAudio_SetVolume(cddrive, orginalCDVolume);
-			logicStatus.isCDPlay = TRUE;
+				// FM 사운드를 끈다.
+				{
+					void (__interrupt __far * oldFmdrvInt)() = _MK_FP(globData.prev_fmdrv_handler_seg, globData.prev_fmdrv_handler_off);
+					_asm
+					{
+						push ax
+						mov ax, 0x200	// AH: 0x02 (FMDRV_STOP), AL: 0x00 (지금 즉시 종료)
+						pushf
+						call dword ptr oldFmdrvInt
+						pop ax
+					}
+				}
 
-			FMDRVReturn(curFMPlayTrack, TRUE);
+				CDAudio_PlaySector(cddrive, fromSector + playMargin, toSector);
+				CDAudio_SetVolume(cddrive, orginalCDVolume);
+				logicStatus.isCDPlay = TRUE;
+
+				FMDRVReturn(curFMPlayTrack, TRUE);
+			}
 		}
 		else
 		{
