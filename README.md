@@ -17,7 +17,7 @@
       - 볼륨 조절과 관련된 문제
         - DOSBOX와 윈도우 9x에서는 정상 동작합니다.
         - XDVD2.SYS, UDVD2.SYS등의 FreeDOS계열 드라이버들은 문제가 있습니다.
-          - 이 드라이버들은 볼륨 조절 명령(INT 2F-1510 / 드라이버에서 MODE SELECT로 translate됨)을 기기로 전달하지 않습니다.
+          - 이 드라이버들은 볼륨 조절 명령(INT 2F-1510 SubFunc3 / 드라이버에서 MODE SELECT로 translate됨)을 기기로 전달하지 않습니다.
           - 그래서 볼륨 조절이 정상 동작하지 않기 때문에, OwnFMDRV를 이들 드라이버와 함께 사용하는 것은 권장되지 않습니다.
         - 호환성이 높은 OAKCDROM.SYS나, 점유 용량이 적은 VIDE-CDD.SYS를 추천합니다.
     - /T=[오디오CD가 들어있는 드라이브]
