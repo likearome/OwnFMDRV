@@ -427,7 +427,7 @@ void ProcessFMDRVInt(void)
 			{
 				// data 카운트만큼 Fade-out을 연출하고 종료한다.
 				// 틱 타이머를 활성화한다.
-				stopDelay = (data + 1) * 4;
+				stopDelay = data * 4;
 				tickAlarm[TICKALARM_STOPMUSIC] = stopDelay;
 				lastStopMusicTickAlarm = tickAlarm[TICKALARM_STOPMUSIC];
 			}
@@ -531,7 +531,6 @@ void ProcessFMDRVInt(void)
 					logicStatus.isCDPlay = FALSE;
 				}
 			}
-		}
 		}
 		break;
 		// FMDRV.COM이 내려가기 시작할 때 호출되는 인터럽트
@@ -641,6 +640,7 @@ CHAINTOPREVHANDLER:
 void __interrupt __far MyTickInterrupt(union INTPACK r)
 {
 	static uint8 carryDetect = 0;
+	(void)r;
 
 	_asm
 	{
