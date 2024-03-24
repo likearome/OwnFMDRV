@@ -54,6 +54,13 @@ static int parseargv(struct argstruct* args) {
 	if (args->argc < 2)
 		return OWNFMDRV_FAIL;
 	args->gametype = args->argv[1];
+	// 만약에 argv[1]이 /u이면 특별히 바로 언로드를 진행한다.
+	if (!stricmp(args->argv[1], "/u"))
+	{
+		args->flags |= ARGFL_UNLOAD;
+		return OWNFMDRV_SUCCESS;
+	}
+
 	for (i = 2; i < args->argc; i++) {
 		char opt;
 		char* arg;
@@ -631,7 +638,8 @@ int main(int argc, char** argv)
 			ErrorLog("OwnFMDRV already installed!\n");
 			return OWNFMDRV_FAIL;
 		}
-		// TODO: Unload 구현
+		UnloadTSR();
+		ErrorLog("OwnFMDRV unload successfully!\n");
 		return OWNFMDRV_SUCCESS;
 	}
 
@@ -826,6 +834,7 @@ int main(int argc, char** argv)
 		}
 	}
 
+	CDAudio_SetVolume(cddrive, orginalCDVolume);
 	StartTSR();
 	// Unreachable code
 	return OWNFMDRV_SUCCESS;

@@ -50,16 +50,16 @@ typedef struct
 
 typedef struct
 {
-	uint8   notUsed;
+	uint8   subfunc;
 
-	uint8   outChannel0;
-	uint8   outVolume0;
-	uint8   outChannel1;
-	uint8   outVolume1;
-	uint8   outChannel2;
-	uint8   outVolume2;
-	uint8   outChannel3;
-	uint8   outVolume3;
+	uint8   Channel0;
+	uint8   Volume0;
+	uint8   Channel1;
+	uint8   Volume1;
+	uint8   Channel2;
+	uint8   Volume2;
+	uint8   Channel3;
+	uint8   Volume3;
 } AudioChannelSet;
 #pragma pack(pop)
 

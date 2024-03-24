@@ -13,6 +13,8 @@
 #define TICK_INTERRUPT			0x08    // 0x08은 실제 타이머 인터럽트. TSR은 08을 직접 후킹해야 한다.
 #define DOS_INTERRUPT			0x21
 
+#define TICK_SECONDS			60		// 60hz 기준. 60이면 1초대기
+
 #define FMDRV_MARKER_OFFSET		(0x08L)
 #define FMDRV_MARKER_SIZE		7
 
@@ -25,8 +27,11 @@
 #define FMDRV_PASSTHROUGH		(0)
 #define FMDRV_NO_PASSTHROUGH	(1)
 
-#define AUDIO_BUSYCHECK_TERM	8               // CD가 Busy상태인지를 체크하는 텀. 8254타이머 칩 구조상, 17에 약 1초
-#define AUDIO_STARTSTEP			2               // 플레이 시작부터 볼륨이 정상수치가 되는데까지의 텀. 17에 약 1초
+#define DOS_SETINTVEC			0x25
+#define DOS_FOPEN				0x3D
+#define DOS_FSEEK				0x42
+#define DOS_EXEC				0x4B
+#define DOS_UNLOADTSR			0xFF
 
 enum FMDRV_COMMAND_TYPE
 {
@@ -44,19 +49,30 @@ enum FMDRV_COMMAND_TYPE
 	FMDRV_COMMAND_6,
 	FMDRV_COMMAND_7,
 	FMDRV_COMMAND_8,
-	FMDRV_COMMAND_9,
+	FMDRV_COMMAND_9,			
+	FMDRV_COMMAND_INSTALL_TIMER_CALLBACK = FMDRV_COMMAND_9,	// 타이머 콜백 함수 등록 (AX:DX)
 
+	// 효과음 재생용 함수
+	FMDRV_COMMAND_10 = 0x10,	// 효과음 INIT
+	FMDRV_COMMAND_11,			// 효과음 PLAY
+	FMDRV_COMMAND_12,			// 효과음 STOP
+	FMDRV_COMMAND_13,			// 효과음 GETSTATUS
+
+	// 70~80 명령어는 다음 핸들러가 있을 경우, 다음 핸들러로 체이닝된다.
 	FMDRV_COMMAND_80 = 0x80,
 	FMDRV_COMMAND_81,
-	FMDRV_COMMAND_82,
-	FMDRV_COMMAND_83,
 
 	FMDRV_COMMAND_F0 = 0xF0,
+	FMDRV_COMMAND_CHECK_TIMER_1 = FMDRV_COMMAND_F0,		// FMDRV가 후킹한 08번 틱 인터럽트 내부의 1번째 타이머 현재 남은 값(시간)을 리턴해주는 함수
 	FMDRV_COMMAND_F1,
-	FMDRV_COMMAND_F2,
-	FMDRV_COMMAND_F3,
-	FMDRV_COMMAND_F4,
+	FMDRV_COMMAND_CHECK_TIMER_2 = FMDRV_COMMAND_F1,		// FMDRV가 후킹한 08번 틱 인터럽트 내부의 2번째 타이머 현재 남은 값(시간)을 리턴해주는 함수
 
+	// FMDRV.COM이 처음 램상주될 때, 이미 램상주된 FMDRV.COM이 있으면 0xFE 함수를 호출하는 것으로 보임
+	// 내부 타이머 파라미터들을 전달받음
+	FMDRV_COMMAND_FE = 0xFE,
+	FMDRV_CHECK_TIMER = FMDRV_COMMAND_FE,
+
+	// FMDRV.COM을 종료하기 직전에 호출되는 함수
 	FMDRV_COMMAND_FF = 0xFF,
 	FMDRV_TERMINATE = FMDRV_COMMAND_FF,
 };
@@ -64,18 +80,13 @@ enum FMDRV_COMMAND_TYPE
 typedef struct
 {
 	uint8 isFMDRVSet : 1;
-
-	uint8 isTermSignal : 1;
-	uint8 isForceTermSignal : 1;
-	uint8 isTickLock : 1;
+	uint8 isTickSet : 1;
 
 	uint8 isCDLoop : 1;
-	uint8 isPlay : 1;
+	uint8 isCDPlay : 1;
 	uint8 isFMPlay : 1;
-	uint8 isCDBusy : 1;
 
 	uint8 isBufferChangeStyleExist : 1;
-
 	uint8 curPlayStep : 2;
 } LogicStatus;
 
@@ -98,17 +109,17 @@ int8 playMargin = 0;
 uint8 orginalCDVolume = 0;
 
 // play info
-int8 volatile startAudioCD = 0;
-int8 volatile startAudioCDStep = 0;
-int8 volatile stopAudioCDStep = 0;
-int8 volatile orgStopAudioCDStep = 0;
-int8 volatile curPlayTrack = -1;
-int8 volatile curFMTrack = -1;
 int8 volatile bufChgFMTrack = -1;
 int8 volatile FMPassThrough = 0;
 
-uint32 volatile fromSector = 0;
-uint32 volatile toSector = 0;
+// tick timer
+enum TickAlarmType
+{
+	TICKALARM_STOPMUSIC = 0,
+	TICKALARM_CHECKBUSY,
+	TICKALARM_MAX
+};
+uint16 volatile tickAlarm[TICKALARM_MAX] = { 0, };
 
 // 트랙 데이터 정보
 int8 isBufferChangeStyleExist;
@@ -123,22 +134,23 @@ char openExeFileName[20];
 char mainExeFileName[20];
 char endExeFileName[20];
 
+CD_TMSF trackMapOpening[MAX_CDAUDIOTRACK + 1];	// 더 줄일 수 있을 지 모르겠는데 항유기 등 특수구조에서는 또 쉽지 않음
 CD_TMSF trackMap[MAX_CDAUDIOTRACK + 1];
-CD_TMSF trackMapOpening[MAX_CDAUDIOTRACK + 1];
-CD_TMSF trackMapEnding[MAX_CDAUDIOTRACK + 1];
+CD_TMSF trackMapEnding[MAX_CDAUDIOTRACK + 1];	// 더 줄일 수 있을 지 모르겠는데 항유기 등 특수구조에서는 또 쉽지 않음
 
-uint8 fmTrackSongNum = 0;
 uint8 fmTrackSongNumOpening = 0;
+uint8 fmTrackSongNum = 0;
 uint8 fmTrackSongNumEnding = 0;
 
+uint32 fmTrackOffsetOpening[MAX_CDAUDIOTRACK + 1];	// 더 줄일 수 있을 지 모르겠는데 항유기 등 특수구조에서는 또 쉽지 않음
 uint32 fmTrackOffset[MAX_CDAUDIOTRACK + 1];
-uint32 fmTrackOffsetOpening[MAX_CDAUDIOTRACK + 1];
-uint32 fmTrackOffsetEnding[MAX_CDAUDIOTRACK + 1];
+uint32 fmTrackOffsetEnding[MAX_CDAUDIOTRACK + 1];	// 더 줄일 수 있을 지 모르겠는데 항유기 등 특수구조에서는 또 쉽지 않음
 
 ////////////////////////////////////////
 // Interrupt parameters
 uint8 far* dosActiveFlag;
 uint8 skipDOSChain = FALSE;
+uint8 terminateTSR = FALSE;
 
 const char FMDRV_Marker_Str[FMDRV_MARKER_SIZE] = FMDRV_MARKER;
 const char SBDRV_Marker_Str[FMDRV_MARKER_SIZE] = SBDRV_MARKER;
@@ -221,35 +233,35 @@ static int mystrcmp(const char far* s, const char far* t)
 	return (int)(*s - *t);
 }
 
-static void __declspec(naked) (__interrupt __far* mygetvect(int8 interruptnum))()
-{
-	(void)interruptnum;
-
-	_asm
-	{
-		mov ah, 35h
-		int 21h
-		ret
-	}
-}
-#pragma aux mygetvect parm [al] value [es bx] modify exact [ax es bx] nomemory;
-
-static void __declspec(naked) mysetvect(int8 interruptnum, void (__interrupt __far* vect)())
-{
-	(void)interruptnum;
-	(void)vect;
-
-	_asm
-	{
-		push ds
-		mov ds, cx
-		mov ah, 25h
-		int 21h
-		pop ds
-		ret
-	}
-}
-#pragma aux mysetvect parm [ax cx dx] modify exact [ax] nomemory;
+//static void __declspec(naked) (__interrupt __far* mygetvect(int8 interruptnum))()
+//{
+//	(void)interruptnum;
+//
+//	_asm
+//	{
+//		mov ah, 35h
+//		int 21h
+//		ret
+//	}
+//}
+//#pragma aux mygetvect parm [al] value [es bx] modify exact [ax es bx] nomemory;
+//
+//static void __declspec(naked) mysetvect(int8 interruptnum, void (__interrupt __far* vect)())
+//{
+//	(void)interruptnum;
+//	(void)vect;
+//
+//	_asm
+//	{
+//		push ds
+//		mov ds, cx
+//		mov ah, 25h
+//		int 21h
+//		pop ds
+//		ret
+//	}
+//}
+//#pragma aux mysetvect parm [ax cx dx] modify exact [ax] nomemory;
 
 // allocseg로 확보한 세그먼트를 free한다.
 static uint16 freeseg(uint16 segm)
@@ -271,14 +283,11 @@ static uint16 freeseg(uint16 segm)
 ////////////////////////////////////////
 // 인터럽트 핸들러에서 사용하기 위한 스택
 static uint8 FMDRVIntStack[NEWSTACKSZ];
-static uint8 TickIntStack[NEWSTACKSZ];
 static uint8 DOSIntStack[NEWSTACKSZ];
 
 // 기존 DOS 스택 위치
 uint16 globFMDRVIntOldstackSeg;
 uint16 globFMDRVIntOldstackOff;
-uint16 globTickIntOldstackSeg;
-uint16 globTickIntOldstackOff;
 uint16 globDOSIntOldstackSeg;
 uint16 globDOSIntOldstackOff;
 
@@ -287,11 +296,30 @@ union INTPACK globFMDRVIntregs;
 union INTPACK globTickIntregs;
 union INTPACK globDOSIntregs;
 
+inline void FMDRVReturn(int8 highbyte, int8 lowbyte)
+{
+	globFMDRVIntregs.w.ax = ((highbyte << 8) & 0xFF00) | lowbyte;
+}
+
 void ProcessFMDRVInt(void)
 {
+	static int8 curCDPlayTrack = 0;
+	static int8 curFMPlayTrack = 0;
+
+	static uint32 fromSector = 0;
+	static uint32 toSector = 0;
+
+	static uint16 stopDelay = 0;
+	static uint16 lastStopMusicTickAlarm = 0;
+
+	static int8 loopDelay = FALSE;
+
 	uint8 register command;
 	uint8 register data;
-	int register curPlayTrackLocal;
+	bool diffTrack;
+	bool diffSector;
+
+	CD_TMSF* curTrackMap = NULL;
 
 	FMPassThrough = FMDRV_PASSTHROUGH;
 
@@ -302,55 +330,43 @@ void ProcessFMDRVInt(void)
 	{
 	case FMDRV_PLAY:
 		// FMTrack을 저장해둔다.
-		curFMTrack = data;
+		curFMPlayTrack = data;
 		if (bufChgFMTrack >= 0)
 		{
-			curFMTrack = bufChgFMTrack;
+			curFMPlayTrack = bufChgFMTrack;
 			//bufChgFMTrack = -1;
 		}
-
-		if (PLAYSTEP_OPEN == logicStatus.curPlayStep)
+		switch (logicStatus.curPlayStep)
 		{
-			curPlayTrackLocal = trackMapOpening[curFMTrack].track;
-			fromSector = trackMapOpening[curFMTrack].fromSector;
-			toSector = trackMapOpening[curFMTrack].toSector;
-		}
-		else if (PLAYSTEP_MAIN == logicStatus.curPlayStep)
-		{
-			if (curFMTrack <= MAX_CDAUDIOTRACK - 1)
-			{
-				curPlayTrackLocal = trackMap[curFMTrack].track;
-				fromSector = trackMap[curFMTrack].fromSector;
-				toSector = trackMap[curFMTrack].toSector;
-			}
-		}
-		else if (PLAYSTEP_END == logicStatus.curPlayStep)
-		{
-			curPlayTrackLocal = trackMapEnding[curFMTrack].track;
-			fromSector = trackMapEnding[curFMTrack].fromSector;
-			toSector = trackMapEnding[curFMTrack].toSector;
-		}
-		else
-		{
-			// 여기로 온다는건 심각한 문제가 있는거다.
+		case PLAYSTEP_OPEN: curTrackMap = trackMapOpening; break;
+		case PLAYSTEP_MAIN: curTrackMap = trackMap; break;
+		case PLAYSTEP_END: curTrackMap = trackMapEnding; break;
+		default: curTrackMap = NULL; break;
 		}
 
+		if (NULL != curTrackMap)
+		{
+			diffTrack = (curFMPlayTrack != curTrackMap[curFMPlayTrack].track);
+			curCDPlayTrack = curTrackMap[curFMPlayTrack].track;
 
-		if (curPlayTrack >= 0 && curPlayTrackLocal == curPlayTrack)
+			diffSector = (fromSector != curTrackMap[curFMPlayTrack].fromSector);
+			fromSector = curTrackMap[curFMPlayTrack].fromSector;
+
+			toSector = curTrackMap[curFMPlayTrack].toSector;
+		}
+
+		if (curCDPlayTrack > 0 && !diffTrack && !diffSector)
 		{
 			// 현재 연주중인 곡과 같은 곡일 때에는 계속 연주하게 놔둔다.
 			FMPassThrough = FMDRV_NO_PASSTHROUGH;
+			FMDRVReturn(curFMPlayTrack, TRUE);
 		}
-		else if (curPlayTrackLocal >= 0)
+		else if (curCDPlayTrack > 0)
 		{
 			// 새로운 CD트랙을 연주한다.
-			// 이를 위해 변수들을 모두 초기화하고, startAudioCD를 1로 세팅한다.
-			curPlayTrack = curPlayTrackLocal;
-			startAudioCD = 1;
-			startAudioCDStep = AUDIO_STARTSTEP;
+			// 이를 위해 변수들을 모두 초기화한다.
 			logicStatus.isCDLoop = FALSE;	// 루프 플래그도 끈다.
 			logicStatus.isFMPlay = FALSE;	// FM플레이도 끈다.
-			orgStopAudioCDStep = 0; // 서서히 볼륨 낮춤도 끈다.
 			FMPassThrough = FMDRV_NO_PASSTHROUGH;
 
 			// FM 사운드를 끈다.
@@ -359,92 +375,192 @@ void ProcessFMDRVInt(void)
 				_asm
 				{
 					push ax
-					mov ax, 200h
+					mov ax, 0x200	// AH: 0x02 (FMDRV_STOP), AL: 0x00 (지금 즉시 종료)
 					pushf
 					call dword ptr oldFmdrvInt
 					pop ax
 				}
 			}
+
+			CDAudio_PlaySector(cddrive, fromSector + playMargin, toSector);
+			CDAudio_SetVolume(cddrive, orginalCDVolume);
+			logicStatus.isCDPlay = TRUE;
+
+			FMDRVReturn(curFMPlayTrack, TRUE);
 		}
 		else
 		{
 			// 매핑이 없으므로 FM 사운드를 재생한다.
-			curFMTrack = data;
+			if (logicStatus.isCDPlay)
+			{
+				CDAudio_Stop(cddrive);
+				CDAudio_SetVolume(cddrive, 0);
+				logicStatus.isCDPlay = FALSE;
+				logicStatus.isCDLoop = FALSE;
+			}
 
-			stopAudioCDStep = 1;
+			curFMPlayTrack = data;
 			logicStatus.isFMPlay = TRUE;
 			FMPassThrough = FMDRV_PASSTHROUGH;
 		}
 		break;
 	case FMDRV_STOP:
-		// 연주 종료
-		// 아직 isPlay가 발생되기도 전에 Stop이 올 수도 있으므로 startAudioCD만 세팅되면 바로 전달한다.
-		if (logicStatus.isPlay || startAudioCD)
+		_asm
 		{
-			stopAudioCDStep = data + 1;
-			orgStopAudioCDStep = stopAudioCDStep;
-			FMPassThrough = FMDRV_NO_PASSTHROUGH;
+			jmp SKIPTSRSIG
+			TSRSIG db 'STOP'
+			SKIPTSRSIG:
 		}
-		//else if (logicStatus.isFMPlay)
-		//{
-		//	isPassthrough = FMDRV_PASSTHROUGH;
-		//}
+		// 연주 종료
+		if (logicStatus.isCDPlay)
+		{
+			//FMPassThrough = FMDRV_NO_PASSTHROUGH;
+			if (0 == data)
+			{
+				// AL(data)값이 0이면 지금 즉시 종료이다.
+				CDAudio_Stop(cddrive);
+				CDAudio_SetVolume(cddrive, 0);
+				logicStatus.isCDPlay = FALSE;
+				logicStatus.isCDLoop = FALSE;
+			}
+			else
+			{
+				// data 카운트만큼 Fade-out을 연출하고 종료한다.
+				// 틱 타이머를 활성화한다.
+				stopDelay = (data + 1) * 4;
+				tickAlarm[TICKALARM_STOPMUSIC] = stopDelay;
+				lastStopMusicTickAlarm = tickAlarm[TICKALARM_STOPMUSIC];
+			}
+			FMDRVReturn(curFMPlayTrack, FALSE);
+		}
 		break;
 	case FMDRV_GETSTATUS:
-		if (!logicStatus.isFMPlay)
+		// Fade-out 같은 볼륨 조절 등에서 사용되는 곳이다.
+		if (logicStatus.isCDPlay)
 		{
-			FMPassThrough = FMDRV_NO_PASSTHROUGH;
+			if (0 != stopDelay)
+			{
+				// 노래가 연주중이지만 Stop 싸인은 왔음
+				if (0 < tickAlarm[TICKALARM_STOPMUSIC])
+				{
+					// 볼륨을 서서히 낮춘다.
+					if (lastStopMusicTickAlarm != tickAlarm[TICKALARM_STOPMUSIC])
+					{
+						uint16 newVol = (uint16)orginalCDVolume * tickAlarm[TICKALARM_STOPMUSIC] / stopDelay;
+						CDAudio_SetVolume(cddrive, newVol);
+						lastStopMusicTickAlarm = tickAlarm[TICKALARM_STOPMUSIC];
+					}
+
+					FMPassThrough = FMDRV_NO_PASSTHROUGH;
+					FMDRVReturn(curFMPlayTrack, TRUE);	// 노래가 아직 연주중
+				}
+				else
+				{
+					CDAudio_Stop(cddrive);
+					CDAudio_SetVolume(cddrive, 0);
+					stopDelay = 0;
+					lastStopMusicTickAlarm = 0;
+					logicStatus.isCDPlay = FALSE;
+					logicStatus.isCDLoop = FALSE;
+
+					FMPassThrough = FMDRV_NO_PASSTHROUGH;
+					FMDRVReturn(curFMPlayTrack, FALSE);	// 노래가 연주중이지 않음
+				}
+			}
+			else
+			{
+				// Stop 싸인이 오지 않았으며 노래가 정상 연주중임
+				FMPassThrough = FMDRV_NO_PASSTHROUGH;
+				FMDRVReturn(curFMPlayTrack, TRUE);	// 노래가 아직 연주중
+			}
 		}
-		//else
-		//{
-		//	isPassthrough = FMDRV_PASSTHROUGH;
-		//}
+		else if(FALSE == logicStatus.isFMPlay)
+		{
+			// CD가 연주중이지 않음
+			// 우리가 응답하고 FMDRV에는 전달하지 않는다.
+			FMPassThrough = FMDRV_NO_PASSTHROUGH;
+			FMDRVReturn(curFMPlayTrack, FALSE);	// 노래가 연주중이지 않음
+		}
+		else
+		{
+			// FM음악이 연주중이므로 FMDRV에 전달한다.
+			// Pass Through
+			FMPassThrough = FMDRV_PASSTHROUGH;
+		}
 		break;
 	case FMDRV_SETLOOP:
-		if (logicStatus.isPlay || startAudioCD)
+		if (logicStatus.isCDPlay)
 		{
 			logicStatus.isCDLoop = data;
 			FMPassThrough = FMDRV_NO_PASSTHROUGH;
-		}
-		//else
-		//{
-		//	isPassthrough = FMDRV_PASSTHROUGH;
-		//}
-		break;
 
+			FMDRVReturn(curFMPlayTrack, TRUE);
+		}
+		break;
+	case FMDRV_COMMAND_F0:
+	case FMDRV_COMMAND_F1:
+		// 노래가 시작되면 항상 호출되는 타이머 신호
+		// 여기서 노래 루프가 가능할 것으로 예상된다.
+		// CD가 바쁘지 않을 때(연주가 멈췄을 때)
+		if (logicStatus.isCDPlay && 0 == tickAlarm[TICKALARM_CHECKBUSY])
+		{
+			tickAlarm[TICKALARM_CHECKBUSY] = TICK_SECONDS;
+			if (CDAUDIO_BUSY != CDAudio_CheckCDBusy(cddrive))
+			{
+				if (logicStatus.isCDLoop)
+				{
+					if (FALSE == loopDelay)
+					{
+						// 지정된 시간만큼 한번 더 쉬었다가 연주한다.
+						loopDelay = TRUE;
+					}
+					else
+					{
+						loopDelay = FALSE;
+						// 루프가 설정돼 있다면 다시 연주를 시작해준다.
+						CDAudio_PlaySector(cddrive, fromSector + playMargin, toSector);
+						CDAudio_SetVolume(cddrive, orginalCDVolume);
+					}
+				}
+				else
+				{
+					// 루프가 아닐 경우에는 STOP한다.
+					CDAudio_Stop(cddrive);
+					CDAudio_SetVolume(cddrive, 0);
+					logicStatus.isCDLoop = FALSE;
+					logicStatus.isCDPlay = FALSE;
+				}
+			}
+		}
+		}
+		break;
+		// FMDRV.COM이 내려가기 시작할 때 호출되는 인터럽트
+		// 우리도 미리 준비가 필요하다.
+	case FMDRV_TERMINATE:
+		if (logicStatus.isCDPlay)
+		{
+			CDAudio_SetVolume(cddrive, 0);
+			CDAudio_Stop(cddrive);
+			CDAudio_SetVolume(cddrive, 0xFF);	// CD 기본 볼륨(최대)로 돌려놓는다.
+		}
+		break;
 		// 아래 명령어는 그대로 넘겨준다.
+		// 의도치 않은 오동작을 막기 위해 아예 주석처리한다.
 	//case FMDRV_INIT:
-	//case FMDRV_TERMINATE:
-	//case FMDRV_COMMAND_F0:
-	//case FMDRV_COMMAND_F1:
-	//case FMDRV_COMMAND_F2:
-	//case FMDRV_COMMAND_F3:
-	//case FMDRV_COMMAND_F4:
 	//case FMDRV_COMMAND_5:
 	//case FMDRV_COMMAND_6:
 	//case FMDRV_COMMAND_7:
 	//case FMDRV_COMMAND_8:
 	//case FMDRV_COMMAND_9:
+	//case FMDRV_COMMAND_10:
+	//case FMDRV_COMMAND_11:
+	//case FMDRV_COMMAND_12:
+	//case FMDRV_COMMAND_13:
 	//case FMDRV_COMMAND_80:
 	//case FMDRV_COMMAND_81:
-	//case FMDRV_COMMAND_82:
-	//case FMDRV_COMMAND_83:
+	//case FMDRV_COMMAND_FE:
 	default:
 		break;
-	}
-
-	// 거의 모든 경우 전달된다.
-	if (FMDRV_PASSTHROUGH == FMPassThrough)
-	{
-		return;
-	}
-	else
-	{
-		globFMDRVIntregs.w.ax = ((logicStatus.isCDLoop << 8) & 0xFF00);
-		if (logicStatus.isPlay)
-		{
-			globFMDRVIntregs.w.ax = globFMDRVIntregs.w.ax | curFMTrack;
-		}
 	}
 }
 
@@ -452,15 +568,9 @@ void __interrupt __far MyFMDRVInterrupt(union INTPACK r)
 {
 	// ### 아래에서 스택 포인터를 바꾸기 때문에,
 	// 여기에 로컬 변수(스택할당)을 선언한 뒤에 스택 포인터 바꾸고 난 위치에서 사용하면 안된다.
-
-	// 인터럽트가 바뀌었는지를 검사하는 정적 문자열을 설정한다.
 	// 그리고 DS도 교체한다.
 	_asm
 	{
-		jmp SKIPTSRSIG
-		TSRSIG db 'MyFM'	// 4글자까지만 인식한다.
-		SKIPTSRSIG:
-
 		push ax         // AX 보존
 		mov ax, ds;
 
@@ -477,6 +587,9 @@ void __interrupt __far MyFMDRVInterrupt(union INTPACK r)
 	case FMDRV_STOP:
 	case FMDRV_GETSTATUS:
 	case FMDRV_SETLOOP:
+	case FMDRV_TERMINATE:
+	case FMDRV_COMMAND_F0:
+	case FMDRV_COMMAND_F1:
 		break;
 	default:
 		FMPassThrough = FMDRV_PASSTHROUGH;
@@ -525,212 +638,12 @@ CHAINTOPREVHANDLER:
 	}
 }
 
-uint8 MonitorFMDRV(void)
-{
-	void __far* FMDRVVect = 0;
-	static int8 busyCheck = AUDIO_BUSYCHECK_TERM;
-	int16 curVolume = 0;
-	uint16 curcs = 0;
-	_asm
-	{
-		push ax
-		mov ax, cs
-		mov curcs, ax
-		pop ax
-	}
-
-	// Vect가 바뀌는 것을 감시하고 있다가 바뀌면 FMDRV.COM이 내려갔음을 의미한다.
-	// 그러므로 우리도 프로세스를 끝낸다.
-	// TSR 안에서 21번 인터럽트(getvect/setvect)사용시에는 반드시 dosActiveFlag를 확인하여야 한다.
-	if (!(*dosActiveFlag))
-	{
-		_asm cli;
-		FMDRVVect = mygetvect(FMDRV_INTERRUPT);
-		_asm sti;
-		if (_MK_FP(curcs, _FP_OFF(MyFMDRVInterrupt)) != FMDRVVect)
-		{
-			logicStatus.isFMDRVSet = FALSE;
-			if (logicStatus.isPlay)
-			{
-				CDAudio_Stop(cddrive);
-				logicStatus.isPlay = FALSE;
-			}
-			return 1;
-		}
-	}
-
-	// 아니면 음악CD 작업을 이어받아 진행한다.
-	if (busyCheck < 0)
-	{
-		busyCheck = AUDIO_BUSYCHECK_TERM;
-		logicStatus.isCDBusy = (CDAUDIO_BUSY == CDAudio_CheckCDBusy(cddrive)) ? 1 : 0;
-	}
-	else
-	{
-		busyCheck--;
-	}
-
-	// 반복
-	if (logicStatus.isCDLoop)
-	{
-		// 노래를 연주해야 되지만 연주를 안하는 등, CD가 바쁘지 않을 때에는
-		// 다시 연주를 시작해준다.
-		if (logicStatus.isPlay && !logicStatus.isCDBusy)
-		{
-			CDAudio_SetVolume(cddrive, orginalCDVolume);
-			CDAudio_PlaySector(cddrive, fromSector + playMargin, toSector);
-			busyCheck = AUDIO_BUSYCHECK_TERM;
-			logicStatus.isCDBusy = 1;
-		}
-	}
-	else
-	{
-		// 루프가 아닐 경우에는 stop을 마킹한다.
-		if (logicStatus.isPlay && !logicStatus.isCDBusy)
-		{
-			stopAudioCDStep = 1;
-		}
-	}
-
-	if (logicStatus.isPlay && 0 <= startAudioCDStep)
-	{
-		// int32로 캐스팅하면 libc의 4바이트 함수가 들어오기 때문에 실행이 실패한다.
-		curVolume = (int16)orginalCDVolume * (AUDIO_STARTSTEP - startAudioCDStep) / AUDIO_STARTSTEP;
-		CDAudio_SetVolume(cddrive, (uint8)curVolume);
-		startAudioCDStep--;
-	}
-
-	if (startAudioCD)
-	{
-		startAudioCD = 0;
-
-		CDAudio_SetVolume(cddrive, 0);
-		CDAudio_PlaySector(cddrive, fromSector + playMargin, toSector);
-		busyCheck = AUDIO_BUSYCHECK_TERM;
-		logicStatus.isCDBusy = TRUE;
-		logicStatus.isPlay = TRUE;
-	}
-
-	if (stopAudioCDStep)
-	{
-		if (logicStatus.isPlay)
-		{
-			stopAudioCDStep--;
-			if (0 < orgStopAudioCDStep)
-			{
-				// int32로 캐스팅하면 libc의 4바이트 함수가 들어오기 때문에 실행이 실패한다.
-				curVolume = (int16)orginalCDVolume - ((int16)orginalCDVolume * (orgStopAudioCDStep - stopAudioCDStep + 1) / orgStopAudioCDStep) * 4 / 3;
-				if (curVolume < 0) curVolume = 0;
-				CDAudio_SetVolume(cddrive, (uint8)curVolume);
-			}
-			if (stopAudioCDStep <= 0)
-			{
-				CDAudio_SetVolume(cddrive, 0);
-				CDAudio_Stop(cddrive);
-				stopAudioCDStep = 0;
-				logicStatus.isPlay = FALSE;
-				curFMTrack = -1;
-				orgStopAudioCDStep = 0;
-				startAudioCDStep = 0;
-
-				if (!startAudioCD)
-				{
-					curPlayTrack = -1;
-				}
-			}
-		}
-		else
-		{
-			stopAudioCDStep = 0;
-		}
-	}
-	return 0;
-}
-
-uint8 TryOverrideFMDRV(void)
-{
-	void __far* FMDRVVect = 0;
-	char __far* FMDRVMarker = 0;
-
-	int cmpSBOPL2 = -1;
-	int cmpFMDRV = -1;
-
-	uint16 curcs = 0;
-
-	// TSR 안에서 21번 인터럽트(getvect/setvect)사용시에는 반드시 dosActiveFlag를 확인하여야 한다.
-	if (!(*dosActiveFlag))
-	{
-		_asm
-		{
-			push ax
-			mov ax, cs
-			mov curcs, ax
-			pop ax
-		}
-
-		_asm cli;
-		FMDRVVect = mygetvect(FMDRV_INTERRUPT);
-		_asm sti;
-		// 해당 함수의 8바이트 앞에 "OPLDRV"가 있는지 확인
-		if (0 != FMDRVVect && ((uint32)FMDRVVect > FMDRV_MARKER_OFFSET))
-		{
-			FMDRVMarker = (char __far*)((uint32)FMDRVVect - FMDRV_MARKER_OFFSET);
-			cmpFMDRV = mystrcmp(FMDRVMarker, FMDRV_Marker_Str);
-			cmpSBOPL2 = mystrcmp(FMDRVMarker, SBDRV_Marker_Str);
-			if (0 == cmpFMDRV || 0 == cmpSBOPL2)
-			{
-				// 해당 위치에 "OPLDRV"가 있으면 Koei의 FMDRV 인터럽트가 세팅된 것이 맞다.
-				// TODO: 해당 위치에서 +7한 부분에 1~9까지의 값이 있는지도 원래는 체크해야 한다.
-
-				// FMDRV_INTERRUPT의 핸들러 수정
-				_asm cli;
-				globData.prev_fmdrv_handler_seg = _FP_SEG(FMDRVVect);
-				globData.prev_fmdrv_handler_off = _FP_OFF(FMDRVVect);
-				mysetvect(FMDRV_INTERRUPT, _MK_FP(curcs, _FP_OFF(MyFMDRVInterrupt)));
-
-				logicStatus.isFMDRVSet = TRUE;
-				_asm sti;
-			}
-		}
-	}
-	return 0;
-}
-
-void ProcessTickInt(void)
-{
-	// InnerTickProcedure가 Tick간격동안 모두 수행하지 못하여 밀리게 되었을 경우,
-	// 이번 틱에서는 동작하지 않도록 스킵한다.
-	// 쓰레드처럼 엄청나게 빠른 속도로 재진입(re-entrant)하는게 아니기 때문에 메모리 배리어 등 최신 고급기술은 쓸 필요가 없다.
-	if (!logicStatus.isTickLock)
-	{
-		logicStatus.isTickLock = 1;
-
-		if (TRUE == logicStatus.isFMDRVSet)
-		{
-			logicStatus.isTermSignal = MonitorFMDRV();
-		}
-		else
-		{
-			logicStatus.isTermSignal = TryOverrideFMDRV();
-		}
-
-		logicStatus.isTickLock = 0;
-	}
-}
-
 void __interrupt __far MyTickInterrupt(union INTPACK r)
 {
-	// ### 아래에서 스택 포인터를 바꾸기 때문에,
-	// 여기에 로컬 변수(스택할당)을 선언한 뒤에 스택 포인터 바꾸고 난 위치에서 사용하면 안된다.
+	static uint8 carryDetect = 0;
 
-	// 인터럽트가 바뀌었는지를 검사하는 정적 문자열을 설정한다.
-	// 그리고 DS도 교체한다.
 	_asm
 	{
-		jmp SKIPTSRSIG
-		TSRSIG db 'MyTI'	// 4글자까지만 인식한다.
-		SKIPTSRSIG:
-
 		push ax         // AX 보존
 		mov ax, ds;
 
@@ -741,62 +654,155 @@ void __interrupt __far MyTickInterrupt(union INTPACK r)
 		pop ax          // AX 복원
 	}
 
-	// 파라미터로 입력받은 (실제로는 스택에 저장된) 인터럽트 레지스터 상태값 r을 별도 전역변수에 보존한다.
-	// 그래야 이 인터럽트를 실행하고 바뀐 레지스터값이 아닌, 첫 호출자(caller)가 보냈던 인터럽트를 그대로
-	// 체인된 다음 인터럽트에 보내줄 수 있다.
-	mymemcpy(&globTickIntregs, &r, sizeof(union INTPACK));
-	// 스택 포인터를 전역변수 공간으로 이동한다.
-	_asm
+	// 틱 인터럽트에서 할 일은 오로지 틱 카운터 계산 뿐이다.
+	// 따라서 다른 인터럽트와 달리 여기서는 스택을 교체하거나 하지 않는다.
+#define TICK_DIVIDER	0x35
+	if ((uint16)(carryDetect + TICK_DIVIDER) > 0xFF)
 	{
-		cli //인터럽트를 중지하여, 다른 인터럽트가 스택 변환중 문제가 발생하지 않도록 조치한다.
-		mov globTickIntOldstackSeg, SS
-		mov globTickIntOldstackOff, SP
-
-		// 현재 DS를 스택 세그먼트에 덮어쓴다.
-		mov ax, ds
-		mov ss, ax
-
-		// 스택 포인터에 newstack의 맨 뒷부분 바로 앞 (+NEWSTACKSZ-2) 위치를 덮어쓴다.
-		mov sp, offset TickIntStack + NEWSTACKSZ - 2
-		sti // 인터럽트를 재개한다.
+		// 캐리 발생
+		int i;
+		for (i = 0; i < TICKALARM_MAX; ++i)
+		{
+			if (tickAlarm[i] > 0) tickAlarm[i]--;
+		}
 	}
 
-	// ***** 여기에 실제로 실행할 기능을 호출한다.
-	ProcessTickInt();
-
-	// 스택을 원래로 돌린다.
-	_asm
-	{
-		cli //인터럽트를 중지하여, 다른 인터럽트가 스택 변환중 문제가 발생하지 않도록 조치한다.
-
-		// 원래의 스택 포인터를 반환한다.
-		mov SS, globTickIntOldstackSeg
-		mov SP, globTickIntOldstackOff
-		sti // 인터럽트를 재개한다.
-	}
-
-	// r의 레지스터를 모두 복원하여 이 값이 함수를 빠져나간 뒤에 정상적으로 세팅될 수 있도록 한다.
-	mymemcpy(&r, &globTickIntregs, sizeof(union INTPACK));
-
-	if (logicStatus.isTermSignal || logicStatus.isForceTermSignal)
-	{
-		// 현재 로딩중인 이 TSR을 언로드한다.
-		_asm cli;
-		// 모든 인터럽트들을 제자리에 되돌려놓는다.
-		// 66번 FMDRV 인터럽트는 내꺼가 설치되었을 때에만 제자리에 되돌려놓는다.
-		if (logicStatus.isFMDRVSet) mysetvect(FMDRV_INTERRUPT, _MK_FP(globData.prev_fmdrv_handler_seg, globData.prev_fmdrv_handler_off));
-		mysetvect(TICK_INTERRUPT, _MK_FP(globData.prev_tick_handler_seg, globData.prev_tick_handler_off));
-		mysetvect(DOS_INTERRUPT, _MK_FP(globData.prev_dos_handler_seg, globData.prev_dos_handler_off));
-
-		//_puthex(freeseg(globData.pspseg));
-		freeseg(globData.pspseg);
-		_asm sti;
-
-		return;
-	}
+	// FMDRV가 커스터마이즈한 틱 주기는 1193181/4096 = 291.304 hz 이다.
+	// 이를 256/ = 약7.3으로 나누어서 40hz를 사용한다.
+	carryDetect = (carryDetect + TICK_DIVIDER) & 0xFF;
 
 //CHAINTOPREVHANDLER:
 	_mvchain_intr(MK_FP(globData.prev_tick_handler_seg, globData.prev_tick_handler_off));
+}
+
+void InDOSInt_SetInterruptVector(uint8 intnum, void far* vector)
+{
+	void (__interrupt __far * oldDOSInt)() = _MK_FP(globData.prev_dos_handler_seg, globData.prev_dos_handler_off);
+	uint16 vector_seg = _FP_SEG(vector);
+	uint16 vector_off = _FP_OFF(vector);
+
+	_asm
+	{
+		push ds
+		push dx
+		push ax
+
+		mov ax, vector_seg
+		mov ds, ax
+		mov dx, vector_off
+		mov ah, DOS_SETINTVEC
+		mov al, intnum
+
+		pushf
+		call dword ptr oldDOSInt
+
+		pop ax
+		pop dx
+		pop ds
+	}
+}
+
+void ProcessDOSInt_SetIntr(uint8 intnum, void far* vector)
+{
+	char __far* FMDRVMarker = 0;
+
+	int cmpSBOPL2 = -1;
+	int cmpFMDRV = -1;
+
+	uint16 curcs = 0;
+	_asm
+	{
+		push ax
+		mov ax, cs
+		mov curcs, ax
+		pop ax
+	}
+
+	// 코드 정합성을 위해 추가
+	if (FMDRV_INTERRUPT == intnum)
+	{
+		if (TRUE == logicStatus.isFMDRVSet)
+		{
+			if (_MK_FP(curcs, _FP_OFF(MyFMDRVInterrupt)) != vector)
+			{
+				// 여기서는 66번의 Restore를 막지 않고 인터럽트를 체이닝한다.
+				// 실제 FMDRV.COM쪽에서 66번의 핸들러의 원래 값을 알고 있기 때문이다.
+				// 우리는 66번 핸들러를 교체하지 않는다.
+				logicStatus.isFMDRVSet = FALSE;
+				if (logicStatus.isCDPlay)
+				{
+					CDAudio_Stop(cddrive);
+					logicStatus.isCDPlay = FALSE;
+				}
+				terminateTSR = TRUE;
+			}
+		}
+		else
+		{
+			if (NULL != vector && ((uint32)vector > FMDRV_MARKER_OFFSET))
+			{
+				FMDRVMarker = (char __far*)((uint32)vector - FMDRV_MARKER_OFFSET);
+				cmpFMDRV = mystrcmp(FMDRVMarker, FMDRV_Marker_Str);
+				cmpSBOPL2 = mystrcmp(FMDRVMarker, SBDRV_Marker_Str);
+				if (0 == cmpFMDRV || 0 == cmpSBOPL2)
+				{
+					// 실제 66번 핸들러의 설치를 막는다.
+					skipDOSChain = TRUE;
+					// 해당 위치에 "OPLDRV"가 있으면 Koei의 FMDRV 인터럽트가 세팅된 것이 맞다.
+					// TODO: 해당 위치에서 +7한 부분에 1~9까지의 값이 있는지도 원래는 체크해야 한다.
+
+					// FMDRV_INTERRUPT의 핸들러 수정
+					globData.prev_fmdrv_handler_seg = _FP_SEG(vector);
+					globData.prev_fmdrv_handler_off = _FP_OFF(vector);
+
+					_asm cli;
+					InDOSInt_SetInterruptVector(intnum, _MK_FP(curcs, _FP_OFF(MyFMDRVInterrupt)));
+					_asm sti; // 인터럽트를 다시 활성화한다.
+
+					logicStatus.isFMDRVSet = TRUE;
+				}
+			}
+		}
+	}
+	else if (TICK_INTERRUPT == intnum)
+	{
+		if (TRUE == logicStatus.isTickSet)
+		{
+			if (_MK_FP(curcs, _FP_OFF(MyTickInterrupt)) != vector)
+			{
+				// 여기서는 08번의 Restore를 막지 않고 인터럽트를 체이닝한다.
+				// 실제 FMDRV.COM쪽에서 08번의 핸들러의 원래 값을 알고 있기 때문이다.
+				// 우리는 08번 핸들러를 교체하지 않는다.
+				logicStatus.isTickSet = FALSE;
+				terminateTSR = TRUE;
+			}
+		}
+		else
+		{
+			// 반드시 FMDRV_INTERRUPT의 후킹 이후에 후킹되기 때문에
+			// FMDRV_INTERRUPT의 후킹여부를 보고 후킹하면 된다.
+			if (NULL != vector && TRUE == logicStatus.isFMDRVSet)
+			{
+				// 실제 08번 핸들러의 설치를 막는다.
+				skipDOSChain = TRUE;
+
+				// TICK_INTERRUPT의 핸들러 수정
+				globData.prev_tick_handler_seg = _FP_SEG(vector);
+				globData.prev_tick_handler_off = _FP_OFF(vector);
+
+				_asm cli;
+				InDOSInt_SetInterruptVector(intnum, _MK_FP(curcs, _FP_OFF(MyTickInterrupt)));
+				_asm sti; // 인터럽트를 다시 활성화한다.
+
+				logicStatus.isTickSet = TRUE;
+			}
+
+		}
+	}
+	else
+	{
+		return;
+	}
 }
 
 void ProcessDOSInt_SetPlayStep(char far* execFileName)
@@ -955,7 +961,7 @@ void ProcessDOSInt_SetMusicFileHandle(uint8 flag, char far* filename)
 	if (!filename)
 		return;
 
-	// fopen 플래그 의미가 읽기전용(AL==0)이거나 읽고쓰기(AL==2)일 때에만 후킹한다.
+	// 코드 정합성을 위해 추가
 	if (0 != globDOSIntregs.h.al && 2 != globDOSIntregs.h.al)
 		return;
 
@@ -1015,7 +1021,11 @@ void __interrupt __far MyDOSInterrupt(union INTPACK r)
 	}
 
 	skipDOSChain = FALSE;
-	if (r.h.ah != 0x4B && !(TRUE == logicStatus.isBufferChangeStyleExist && (r.h.ah == 0x42 || r.h.ah == 0x3D) )) goto CHAINTOPREVHANDLER;
+
+	if (!(TRUE == logicStatus.isBufferChangeStyleExist && (r.h.ah == DOS_FOPEN || r.h.ah == DOS_FSEEK) )
+	&& r.h.ah != DOS_EXEC
+	&& r.h.ah != DOS_SETINTVEC
+	&& r.h.ah != DOS_UNLOADTSR) goto CHAINTOPREVHANDLER;
 
 	// 파라미터로 입력받은 (실제로는 스택에 저장된) 인터럽트 레지스터 상태값 r을 별도 전역변수에 보존한다.
 	// 그래야 이 인터럽트를 실행하고 바뀐 레지스터값이 아닌, 첫 호출자(caller)가 보냈던 인터럽트를 그대로
@@ -1039,30 +1049,38 @@ void __interrupt __far MyDOSInterrupt(union INTPACK r)
 
 	// ***** 여기에 실제로 실행할 기능을 호출한다.
 	// 스택이 바뀐 이후이므로 r은 쓸 수 없다. globIntreg를 사용해야 한다.
-	if (globDOSIntregs.h.ah == 0x4B)	// call exe
+	switch (globDOSIntregs.h.ah)
 	{
+	case DOS_EXEC:
 		ProcessDOSInt_SetPlayStep(_MK_FP(globDOSIntregs.w.ds, globDOSIntregs.w.dx));
-	}
-	else if (TRUE == logicStatus.isBufferChangeStyleExist)	// fseek
-	{
-		switch (globDOSIntregs.h.ah)
+		break;
+	case DOS_FOPEN:
+		if (TRUE == logicStatus.isBufferChangeStyleExist)
 		{
-		case 0x42:
-			// fseek 플래그 의미가 파일 맨 처음(AL==0)일 때에만 후킹한다.
-			if (0 == globDOSIntregs.h.al)
-			{
-				uint32 localFMTrackOffset = (globDOSIntregs.w.cx);
-				localFMTrackOffset <<= 16;
-				localFMTrackOffset += globDOSIntregs.w.dx;
-				ProcessDOSInt_BufChgFMTrack(globDOSIntregs.w.bx, localFMTrackOffset);
-			}
-			break;
-		case 0x3D:
-			ProcessDOSInt_SetMusicFileHandle(globDOSIntregs.h.al, _MK_FP(globDOSIntregs.w.ds, globDOSIntregs.w.dx));
-			break;
-		default:
-			break;
+			// fopen 플래그 의미가 읽기전용(AL==0)이거나 읽고쓰기(AL==2)일 때에만 후킹한다.
+			if (0 == globDOSIntregs.h.al || 2 == globDOSIntregs.h.al)
+				ProcessDOSInt_SetMusicFileHandle(globDOSIntregs.h.al, _MK_FP(globDOSIntregs.w.ds, globDOSIntregs.w.dx));
 		}
+		break;
+	case DOS_FSEEK:
+		// fseek 플래그 의미가 파일 맨 처음(AL==0)일 때에만 후킹한다.
+		if (TRUE == logicStatus.isBufferChangeStyleExist && 0 == globDOSIntregs.h.al)
+		{
+			uint32 localFMTrackOffset = (globDOSIntregs.w.cx);
+			localFMTrackOffset <<= 16;
+			localFMTrackOffset += globDOSIntregs.w.dx;
+			ProcessDOSInt_BufChgFMTrack(globDOSIntregs.w.bx, localFMTrackOffset);
+		}
+		break;
+	case DOS_SETINTVEC:
+		if (FMDRV_INTERRUPT == globDOSIntregs.h.al || TICK_INTERRUPT == globDOSIntregs.h.al)
+			ProcessDOSInt_SetIntr(globDOSIntregs.h.al, _MK_FP(globDOSIntregs.w.ds, globDOSIntregs.w.dx));
+		break;
+	case DOS_UNLOADTSR:
+		terminateTSR = TRUE;
+		break;
+	default:
+		break;
 	}
 
 	// 스택을 원래로 돌린다.
@@ -1080,8 +1098,22 @@ void __interrupt __far MyDOSInterrupt(union INTPACK r)
 	mymemcpy(&r, &globDOSIntregs, sizeof(union INTPACK));
 
 CHAINTOPREVHANDLER:
-	if (FALSE == skipDOSChain)
-		_mvchain_intr(MK_FP(globData.prev_dos_handler_seg, globData.prev_dos_handler_off));
+	if (FALSE == terminateTSR)
+	{
+		if (FALSE == skipDOSChain)
+			_mvchain_intr(MK_FP(globData.prev_dos_handler_seg, globData.prev_dos_handler_off));
+	}
+	else
+	{
+		_asm cli;
+		// 모든 인터럽트들을 제자리에 되돌려놓는다.
+		InDOSInt_SetInterruptVector(DOS_INTERRUPT, _MK_FP(globData.prev_dos_handler_seg, globData.prev_dos_handler_off));
+		_asm sti;
+
+		// 현재 로딩중인 이 TSR을 언로드한다.
+		//_puthex(freeseg(globData.pspseg));
+		freeseg(globData.pspseg);
+	}
 }
 
 /////////////////////////////////////////
@@ -1212,7 +1244,7 @@ int SetupInterrupt(uint16 newcs, uint16 newds)
 
 	// Get Dos Active Flag
 	regs.h.ah = 0x34;
-	int86x(0x21, &regs, &regs, &sregs);
+	int86x(DOS_INTERRUPT, &regs, &regs, &sregs);
 
 	SET_DS_TO_NEWDS;
 	{
@@ -1226,25 +1258,13 @@ int SetupInterrupt(uint16 newcs, uint16 newds)
 		}
 
 		memset((void*)&FMDRVIntStack, 0, sizeof(char) * NEWSTACKSZ);
-		memset((void*)&TickIntStack, 0, sizeof(char) * NEWSTACKSZ);
 		memset((void*)&DOSIntStack, 0, sizeof(char) * NEWSTACKSZ);
 	}
 	RESTORE_DS_FROM_OLDDS;
 
 	_disable();
 
-	// 1. CD 연주 및 감시를 위한 Tick 인터럽트를 후킹한다.
-	oldInt = _dos_getvect(TICK_INTERRUPT);
-	SET_DS_TO_NEWDS;
-	{
-		globData.prev_tick_handler_seg = _FP_SEG(oldInt);
-		globData.prev_tick_handler_off = _FP_OFF(oldInt);
-	}
-	RESTORE_DS_FROM_OLDDS;
-	// 보내주는 세그먼트로 교체
-	_dos_setvect(TICK_INTERRUPT, MK_FP(newcs, _FP_OFF(MyTickInterrupt)));
-
-	// 2. 프로세스 확인을 위해 DOS 인터럽트를 후킹한다.
+	// 프로세스 확인, FMDRV의 설치/삭제를 위해 DOS 인터럽트를 후킹한다.
 	oldInt = _dos_getvect(DOS_INTERRUPT);
 	SET_DS_TO_NEWDS;
 	{
@@ -1440,5 +1460,14 @@ int8 IsTSRInstalled(void)
 
 int8 UnloadTSR(void)
 {
+	if (IsTSRInstalled())
+	{
+		union REGS regs;
+		struct SREGS sregs;
+
+		regs.h.ah = DOS_UNLOADTSR;
+		int86x(DOS_INTERRUPT, &regs, &regs, &sregs);
+	}
+
 	return INTERRUPT_SUCCESS;
 }

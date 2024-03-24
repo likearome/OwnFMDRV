@@ -364,7 +364,7 @@ FodyWeavers.xsd
 *.lnk
 *.conf
 *.err
-*.map
+*.exe
 *.zip
-/ownfmdrv.exe
+*.txt
 /copytovhd.bat

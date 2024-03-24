@@ -50,14 +50,6 @@ typedef struct
 	uint32  startPos;
 	uint8   status;
 } TrackInfo;
-
-typedef struct
-{
-	uint8   subfunc;
-	uint16  audioStatus;
-	uint32  resumeStart;
-	uint32  resumeEnd;
-} AudioInfo;
 #pragma pack(pop)
 
 // 이 코드는 메모리에 남는다.
@@ -136,15 +128,15 @@ int8 CDAudio_SetVolume(int8 INPARAM drive, uint8 INPARAM volume)
 {
 	AudioChannelSet channelInfo;
 	zerobytes(&channelInfo, sizeof(channelInfo));
-	channelInfo.notUsed = 3;        //subfunc
-	channelInfo.outChannel0 = 0;
-	channelInfo.outChannel1 = 1;
-	channelInfo.outChannel2 = 2;
-	channelInfo.outChannel3 = 3;
-	channelInfo.outVolume0 = volume;
-	channelInfo.outVolume1 = volume;
-	channelInfo.outVolume2 = volume;
-	channelInfo.outVolume3 = volume;
+	channelInfo.subfunc = 3;        //subfunc
+	channelInfo.Channel0 = 0;
+	channelInfo.Channel1 = 1;
+	channelInfo.Channel2 = 2;
+	channelInfo.Channel3 = 3;
+	channelInfo.Volume0 = volume;
+	channelInfo.Volume1 = volume;
+	channelInfo.Volume2 = volume;
+	channelInfo.Volume3 = volume;
 
 	CallCDROMDriver(drive, CMD_IOCTL_OUT, &channelInfo, sizeof(channelInfo), 0);
 	return CDAUDIO_SUCCESS;
@@ -152,7 +144,11 @@ int8 CDAudio_SetVolume(int8 INPARAM drive, uint8 INPARAM volume)
 
 int8 CDAudio_PlaySector(int8 INPARAM drive, uint32 INPARAM startSector, uint32 INPARAM endSector)
 {
-	return CallCDROMDriver(drive, CMD_PLAY, (void far*)(startSector - TRACK_MARGIN), endSector - startSector, 0);
+	return CallCDROMDriver(drive, 
+		CMD_PLAY, 
+		(void far*)(startSector < TRACK_MARGIN ? 0 : (startSector - TRACK_MARGIN)), 
+		(endSector < startSector ? 0 : endSector - startSector), 
+		0);
 }
 
 int8 CDAudio_Stop(int8 INPARAM drive)
@@ -164,12 +160,12 @@ int8 CDAudio_Stop(int8 INPARAM drive)
 
 int8 CDAudio_CheckCDBusy(int8 INPARAM drive)
 {
-	AudioInfo audioInfo;
+	DriveStatus driveStatus;
 	uint16 status;
 
-	zerobytes(&audioInfo, sizeof(audioInfo));
-	audioInfo.subfunc = 15;
-	if (CDAUDIO_FAIL == CallCDROMDriver(drive, CMD_IOCTL_IN, &audioInfo, sizeof(audioInfo), &status))
+	zerobytes(&driveStatus, sizeof(driveStatus));
+	driveStatus.subfunc = 6;
+	if (CDAUDIO_FAIL == CallCDROMDriver(drive, CMD_IOCTL_IN, &driveStatus, sizeof(driveStatus), &status))
 	{
 		return CDAUDIO_FAIL;
 	}

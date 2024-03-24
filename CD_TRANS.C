@@ -52,59 +52,7 @@ typedef struct
 	uint32  startPos;
 	uint8   status;
 } TrackInfo;
-
-typedef struct
-{
-	uint8   subfunc;
-	uint16  audioStatus;
-	uint32  resumeStart;
-	uint32  resumeEnd;
-} AudioInfo;
-
 #pragma pack(pop)  // 바이트 얼라인 복원
-
-// ======== Utility Functions ========
-//static int8 CallCDROMDriver(int16 drive, uint8 command, void far * ptr, uint32 size, uint16 *status)
-//{
-//        RequestHeader reqHeader;
-//        void far *reqHdrPtr = &reqHeader;
-//
-//        union REGS cdrom;
-//        struct SREGS scdrom;
-//
-//        reqHeader.headerLength = 13;
-//        reqHeader.subunitCode = 0;
-//        reqHeader.command = command;
-//        reqHeader.status = 0;
-//        reqHeader.addressingMode = 0;
-//        reqHeader.ptr = ptr;
-//        reqHeader.length = size;
-//
-//        cdrom.h.ah = 0x15;
-//        cdrom.h.al = 0x10;
-//        cdrom.x.cx = drive;
-//
-//        scdrom.es = _FP_SEG(reqHdrPtr);
-//        cdrom.x.bx = _FP_OFF(reqHdrPtr);
-//
-//        int86x(0x2F, &cdrom, &cdrom, &scdrom);
-//
-//        if( cdrom.x.cflag )
-//        {
-//                return CDAUDIO_FAIL;
-//        }
-//        if( 0 == (reqHeader.status & CD_OK))
-//        {
-//                return CDAUDIO_FAIL;
-//        }
-//        if (0 != status)
-//        {
-//                *status = reqHeader.status;
-//        }
-//
-//        return CDAUDIO_SUCCESS;
-//}
-
 
 // ======== Utility Functions ========
 static int8 CallCDROMDriver(int16 drive, uint8 command, void far* ptr, uint32 size, uint16* status)
@@ -349,7 +297,7 @@ int8 CDAudio_GetVolume(int8 INPARAM drive, AudioChannelSet OUTPARAM* channelInfo
 		return CDAUDIO_FAIL;
 	}
 	memset(channelInfo, 0, sizeof(channelInfo));
-	channelInfo->notUsed = 4;       //subfunc
+	channelInfo->subfunc = 4;       //subfunc
 	CallCDROMDriver(drive, CMD_IOCTL_IN, channelInfo, sizeof(*channelInfo), 0);
 
 	return CDAUDIO_SUCCESS;
