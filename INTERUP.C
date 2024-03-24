@@ -13,7 +13,7 @@
 #define TICK_INTERRUPT			0x08    // 0x08은 실제 타이머 인터럽트. TSR은 08을 직접 후킹해야 한다.
 #define DOS_INTERRUPT			0x21
 
-#define TICK_SECONDS			60		// 60hz 기준. 60이면 1초대기
+#define CDBUSY_CHECKTERM		30		// 60hz 기준. 30이면 0.5초대기
 
 #define FMDRV_MARKER_OFFSET		(0x08L)
 #define FMDRV_MARKER_SIZE		7
@@ -312,8 +312,6 @@ void ProcessFMDRVInt(void)
 	static uint16 stopDelay = 0;
 	static uint16 lastStopMusicTickAlarm = 0;
 
-	static int8 loopDelay = FALSE;
-
 	uint8 register command;
 	uint8 register data;
 	bool diffTrack;
@@ -405,12 +403,6 @@ void ProcessFMDRVInt(void)
 		}
 		break;
 	case FMDRV_STOP:
-		_asm
-		{
-			jmp SKIPTSRSIG
-			TSRSIG db 'STOP'
-			SKIPTSRSIG:
-		}
 		// 연주 종료
 		if (logicStatus.isCDPlay)
 		{
@@ -504,23 +496,14 @@ void ProcessFMDRVInt(void)
 		// CD가 바쁘지 않을 때(연주가 멈췄을 때)
 		if (logicStatus.isCDPlay && 0 == tickAlarm[TICKALARM_CHECKBUSY])
 		{
-			tickAlarm[TICKALARM_CHECKBUSY] = TICK_SECONDS;
+			tickAlarm[TICKALARM_CHECKBUSY] = CDBUSY_CHECKTERM;
 			if (CDAUDIO_BUSY != CDAudio_CheckCDBusy(cddrive))
 			{
 				if (logicStatus.isCDLoop)
 				{
-					if (FALSE == loopDelay)
-					{
-						// 지정된 시간만큼 한번 더 쉬었다가 연주한다.
-						loopDelay = TRUE;
-					}
-					else
-					{
-						loopDelay = FALSE;
-						// 루프가 설정돼 있다면 다시 연주를 시작해준다.
-						CDAudio_PlaySector(cddrive, fromSector + playMargin, toSector);
-						CDAudio_SetVolume(cddrive, orginalCDVolume);
-					}
+					// 루프가 설정돼 있다면 다시 연주를 시작해준다.
+					CDAudio_PlaySector(cddrive, fromSector + playMargin, toSector);
+					CDAudio_SetVolume(cddrive, orginalCDVolume);
 				}
 				else
 				{
