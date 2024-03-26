@@ -13,7 +13,7 @@
 #define TICK_INTERRUPT			0x08    // 0x08은 실제 타이머 인터럽트. TSR은 08을 직접 후킹해야 한다.
 #define DOS_INTERRUPT			0x21
 
-#define CDBUSY_CHECKTERM		30		// 60hz 기준. 30이면 0.5초대기
+#define CDBUSY_CHECKTERM		8		// 15hz 기준. 8이면 0.5초대기
 
 #define FMDRV_MARKER_OFFSET		(0x08L)
 #define FMDRV_MARKER_SIZE		7
@@ -119,7 +119,7 @@ enum TickAlarmType
 	TICKALARM_CHECKBUSY,
 	TICKALARM_MAX
 };
-uint16 volatile tickAlarm[TICKALARM_MAX] = { 0, };
+uint8 volatile tickAlarm[TICKALARM_MAX] = { 0, };
 
 // 트랙 데이터 정보
 int8 isBufferChangeStyleExist;
@@ -296,7 +296,7 @@ union INTPACK globFMDRVIntregs;
 union INTPACK globTickIntregs;
 union INTPACK globDOSIntregs;
 
-inline void FMDRVReturn(int8 highbyte, int8 lowbyte)
+inline void FMDRVSetRetVal(int8 lowbyte, int8 highbyte)
 {
 	globFMDRVIntregs.w.ax = ((highbyte << 8) & 0xFF00) | lowbyte;
 }
@@ -310,8 +310,9 @@ void ProcessFMDRVInt(void)
 	static uint32 fromSector = 0;
 	static uint32 toSector = 0;
 
-	static uint16 stopDelay = 0;
-	static uint16 lastStopMusicTickAlarm = 0;
+	static uint8 stopDelay = 0;
+	static uint8 firstStopMusicTickAlarm = 0;
+	static uint8 lastStopMusicTickAlarm = 0;
 
 	uint8 register command;
 	uint8 register data;
@@ -328,10 +329,14 @@ void ProcessFMDRVInt(void)
 	switch (command)
 	{
 	case FMDRV_PLAY:
+		PUTCHAR('F'); PUTCHAR('M'); PUTCHAR('D'); PUTCHAR('R'); PUTCHAR('V');
+		PUTCHAR('_'); PUTCHAR('P'); PUTCHAR('L'); PUTCHAR('A'); PUTCHAR('Y'); PUTCHAR(' ');
 		// FMTrack을 저장해둔다.
 		curFMPlayTrack = data;
+		PUTCHAR('D'); PUTCHAR(' '); PUTHEX(data); PUTCHAR(' ');
 		if (bufChgFMTrack >= 0)
 		{
+			PUTCHAR('B'); PUTCHAR('U'); PUTCHAR('F'); PUTCHAR(' '); PUTHEX(bufChgFMTrack); PUTCHAR(' ');
 			curFMPlayTrack = bufChgFMTrack;
 			//bufChgFMTrack = -1;
 		}
@@ -361,17 +366,21 @@ void ProcessFMDRVInt(void)
 
 			toSector = curTrackMap[curFMPlayTrack].toSector;
 		}
+		PUTCHAR('D'); PUTCHAR('F'); PUTCHAR('T'); PUTCHAR('R'); PUTCHAR('K'); PUTCHAR(' '); PUTHEX(diffTrack); PUTCHAR(' ');
+		PUTCHAR('D'); PUTCHAR('F'); PUTCHAR('S'); PUTCHAR('E'); PUTCHAR('C'); PUTCHAR(' '); PUTHEX(diffSector); PUTCHAR(' ');
 
 		if (curCDPlayTrack >= 0)
 		{
-			if (!diffTrack && !diffSector)
+			if (logicStatus.isCDPlay && !diffTrack && !diffSector)
 			{
+				PUTCHAR('C'); PUTCHAR('T'); PUTCHAR('N'); PUTCHAR(' ');
 				// 현재 연주중인 곡과 같은 곡일 때에는 계속 연주하게 놔둔다.
 				FMPassThrough = FMDRV_NO_PASSTHROUGH;
-				FMDRVReturn(curFMPlayTrack, TRUE);
+				FMDRVSetRetVal(TRUE, curFMPlayTrack);
 			}
 			else
 			{
+				PUTCHAR('N'); PUTCHAR('E'); PUTCHAR('W'); PUTCHAR(' ');
 				// 새로운 CD트랙을 연주한다.
 				// 이를 위해 변수들을 모두 초기화한다.
 				logicStatus.isCDLoop = FALSE;	// 루프 플래그도 끈다.
@@ -395,11 +404,12 @@ void ProcessFMDRVInt(void)
 				CDAudio_SetVolume(cddrive, orginalCDVolume);
 				logicStatus.isCDPlay = TRUE;
 
-				FMDRVReturn(curFMPlayTrack, TRUE);
+				FMDRVSetRetVal(TRUE, curFMPlayTrack);
 			}
 		}
 		else
 		{
+			PUTCHAR('F'); PUTCHAR('M'); PUTCHAR(' ');
 			// 매핑이 없으므로 FM 사운드를 재생한다.
 			if (logicStatus.isCDPlay)
 			{
@@ -411,10 +421,29 @@ void ProcessFMDRVInt(void)
 
 			curFMPlayTrack = data;
 			logicStatus.isFMPlay = TRUE;
-			FMPassThrough = FMDRV_PASSTHROUGH;
+
+			FMPassThrough = FMDRV_NO_PASSTHROUGH;
+			// FM 사운드를 켠다
+			{
+				uint16 FM_CMD = globFMDRVIntregs.w.ax;
+				void (__interrupt __far * oldFmdrvInt)() = _MK_FP(globData.prev_fmdrv_handler_seg, globData.prev_fmdrv_handler_off);
+				_asm
+				{
+					push ax
+					mov ax, FM_CMD
+					pushf
+					call dword ptr oldFmdrvInt
+					pop ax
+				}
+			}
+			FMDRVSetRetVal(TRUE, curFMPlayTrack);
 		}
+		PUTCHAR('\n');
 		break;
 	case FMDRV_STOP:
+		PUTCHAR('F'); PUTCHAR('M'); PUTCHAR('D'); PUTCHAR('R'); PUTCHAR('V');
+		PUTCHAR('_'); PUTCHAR('S'); PUTCHAR('T'); PUTCHAR('O'); PUTCHAR('P');
+		PUTCHAR('\n');
 		// 연주 종료
 		if (logicStatus.isCDPlay)
 		{
@@ -431,11 +460,11 @@ void ProcessFMDRVInt(void)
 			{
 				// data 카운트만큼 Fade-out을 연출하고 종료한다.
 				// 틱 타이머를 활성화한다.
-				stopDelay = data * 4;
+				stopDelay = data;
 				tickAlarm[TICKALARM_STOPMUSIC] = stopDelay;
-				lastStopMusicTickAlarm = tickAlarm[TICKALARM_STOPMUSIC];
+				lastStopMusicTickAlarm = stopDelay;
 			}
-			FMDRVReturn(curFMPlayTrack, FALSE);
+			FMDRVSetRetVal(FALSE, 0);
 		}
 		break;
 	case FMDRV_GETSTATUS:
@@ -444,46 +473,85 @@ void ProcessFMDRVInt(void)
 		{
 			if (0 != stopDelay)
 			{
+				// 삼국지 3 등에서는 STOP신호가 오고 조금의 딜레이 이후에 GETSTATUS가 호출되기 때문에
+				// 급격한 볼륨 다운이 느껴질 수 있다.
+				// 이를 방지하기 위해 STOP이후 첫번째 GETSTATUS가 들어왔을 때의 값을 바탕으로 볼륨을 조절한다.
+				if (0 == firstStopMusicTickAlarm)
+					firstStopMusicTickAlarm = tickAlarm[TICKALARM_STOPMUSIC];
 				// 노래가 연주중이지만 Stop 싸인은 왔음
-				if (0 < tickAlarm[TICKALARM_STOPMUSIC])
+				if (0 < firstStopMusicTickAlarm && 0 < tickAlarm[TICKALARM_STOPMUSIC])
 				{
 					// 볼륨을 서서히 낮춘다.
 					if (lastStopMusicTickAlarm != tickAlarm[TICKALARM_STOPMUSIC])
 					{
-						uint16 newVol = (uint16)orginalCDVolume * tickAlarm[TICKALARM_STOPMUSIC] / stopDelay;
+						uint8 newVol = ((uint16)orginalCDVolume * tickAlarm[TICKALARM_STOPMUSIC] / firstStopMusicTickAlarm) & 0xFF;
 						CDAudio_SetVolume(cddrive, newVol);
 						lastStopMusicTickAlarm = tickAlarm[TICKALARM_STOPMUSIC];
+						PUTCHAR('F'); PUTCHAR('M'); PUTCHAR('D'); PUTCHAR('R'); PUTCHAR('V');
+						PUTCHAR('_'); PUTCHAR('G'); PUTCHAR('E'); PUTCHAR('T'); PUTCHAR('S'); PUTCHAR('T'); PUTCHAR('A'); PUTCHAR('T'); PUTCHAR('U'); PUTCHAR('S'); PUTCHAR(' ');
+
+						PUTCHAR('S'); PUTCHAR('D');  PUTCHAR(' ');  PUTHEX(stopDelay); PUTCHAR(' ');
+						PUTCHAR('F'); PUTCHAR('D');  PUTCHAR(' ');  PUTHEX(firstStopMusicTickAlarm); PUTCHAR(' ');
+						PUTCHAR('L'); PUTCHAR('D');  PUTCHAR(' ');  PUTHEX(lastStopMusicTickAlarm); PUTCHAR(' ');
+						PUTCHAR('T'); PUTCHAR('A');  PUTCHAR(' ');  PUTHEX(tickAlarm[TICKALARM_STOPMUSIC]); PUTCHAR(' ');
+
+						PUTCHAR('V'); PUTCHAR('O'); PUTCHAR('L'); PUTCHAR(' ');  PUTHEX(newVol);
 					}
 
 					FMPassThrough = FMDRV_NO_PASSTHROUGH;
-					FMDRVReturn(curFMPlayTrack, TRUE);	// 노래가 아직 연주중
+					FMDRVSetRetVal(TRUE, curFMPlayTrack);	// 노래가 아직 연주중
 				}
 				else
 				{
+					PUTCHAR('F'); PUTCHAR('M'); PUTCHAR('D'); PUTCHAR('R'); PUTCHAR('V');
+					PUTCHAR('_'); PUTCHAR('G'); PUTCHAR('E'); PUTCHAR('T'); PUTCHAR('S'); PUTCHAR('T'); PUTCHAR('A'); PUTCHAR('T'); PUTCHAR('U'); PUTCHAR('S'); PUTCHAR(' ');
+
+					PUTCHAR('S'); PUTCHAR('D');  PUTCHAR(' ');  PUTHEX(stopDelay); PUTCHAR(' ');
+					PUTCHAR('F'); PUTCHAR('D');  PUTCHAR(' ');  PUTHEX(firstStopMusicTickAlarm); PUTCHAR(' ');
+					PUTCHAR('L'); PUTCHAR('D');  PUTCHAR(' ');  PUTHEX(lastStopMusicTickAlarm); PUTCHAR(' ');
+					PUTCHAR('T'); PUTCHAR('A');  PUTCHAR(' ');  PUTHEX(tickAlarm[TICKALARM_STOPMUSIC]); PUTCHAR(' ');
+					PUTCHAR('S'); PUTCHAR('T'); PUTCHAR('O'); PUTCHAR('P'); PUTCHAR(' ');
 					CDAudio_Stop(cddrive);
 					CDAudio_SetVolume(cddrive, 0);
 					stopDelay = 0;
+					firstStopMusicTickAlarm = 0;
 					lastStopMusicTickAlarm = 0;
 					logicStatus.isCDPlay = FALSE;
 					logicStatus.isCDLoop = FALSE;
 
 					FMPassThrough = FMDRV_NO_PASSTHROUGH;
-					FMDRVReturn(curFMPlayTrack, FALSE);	// 노래가 연주중이지 않음
+					FMDRVSetRetVal(FALSE, 0);	// 노래가 연주중이지 않음
 				}
 			}
 			else
 			{
+				PUTCHAR('F'); PUTCHAR('M'); PUTCHAR('D'); PUTCHAR('R'); PUTCHAR('V');
+				PUTCHAR('_'); PUTCHAR('G'); PUTCHAR('E'); PUTCHAR('T'); PUTCHAR('S'); PUTCHAR('T'); PUTCHAR('A'); PUTCHAR('T'); PUTCHAR('U'); PUTCHAR('S'); PUTCHAR(' ');
+
+				PUTCHAR('S'); PUTCHAR('D');  PUTCHAR(' ');  PUTHEX(stopDelay); PUTCHAR(' ');
+				PUTCHAR('F'); PUTCHAR('D');  PUTCHAR(' ');  PUTHEX(firstStopMusicTickAlarm); PUTCHAR(' ');
+				PUTCHAR('L'); PUTCHAR('D');  PUTCHAR(' ');  PUTHEX(lastStopMusicTickAlarm); PUTCHAR(' ');
+				PUTCHAR('T'); PUTCHAR('A');  PUTCHAR(' ');  PUTHEX(tickAlarm[TICKALARM_STOPMUSIC]); PUTCHAR(' ');
+				PUTCHAR('N'); PUTCHAR('O'); PUTCHAR('R'); PUTCHAR('M'); PUTCHAR('A'); PUTCHAR('L'); PUTCHAR(' ');
 				// Stop 싸인이 오지 않았으며 노래가 정상 연주중임
 				FMPassThrough = FMDRV_NO_PASSTHROUGH;
-				FMDRVReturn(curFMPlayTrack, TRUE);	// 노래가 아직 연주중
+				FMDRVSetRetVal(TRUE, curFMPlayTrack);	// 노래가 아직 연주중
 			}
 		}
 		else if(FALSE == logicStatus.isFMPlay)
 		{
+			PUTCHAR('F'); PUTCHAR('M'); PUTCHAR('D'); PUTCHAR('R'); PUTCHAR('V');
+			PUTCHAR('_'); PUTCHAR('G'); PUTCHAR('E'); PUTCHAR('T'); PUTCHAR('S'); PUTCHAR('T'); PUTCHAR('A'); PUTCHAR('T'); PUTCHAR('U'); PUTCHAR('S'); PUTCHAR(' ');
+
+			PUTCHAR('S'); PUTCHAR('D');  PUTCHAR(' ');  PUTHEX(stopDelay); PUTCHAR(' ');
+			PUTCHAR('F'); PUTCHAR('D');  PUTCHAR(' ');  PUTHEX(firstStopMusicTickAlarm); PUTCHAR(' ');
+			PUTCHAR('L'); PUTCHAR('D');  PUTCHAR(' ');  PUTHEX(lastStopMusicTickAlarm); PUTCHAR(' ');
+			PUTCHAR('T'); PUTCHAR('A');  PUTCHAR(' ');  PUTHEX(tickAlarm[TICKALARM_STOPMUSIC]); PUTCHAR(' ');
+			PUTCHAR('F'); PUTCHAR('M'); PUTCHAR('N'); PUTCHAR('O'); PUTCHAR('S'); PUTCHAR('O'); PUTCHAR('N'); PUTCHAR('D'); PUTCHAR(' ');
 			// CD가 연주중이지 않음
 			// 우리가 응답하고 FMDRV에는 전달하지 않는다.
 			FMPassThrough = FMDRV_NO_PASSTHROUGH;
-			FMDRVReturn(curFMPlayTrack, FALSE);	// 노래가 연주중이지 않음
+			FMDRVSetRetVal(FALSE, 0);	// 노래가 연주중이지 않음
 		}
 		else
 		{
@@ -491,6 +559,7 @@ void ProcessFMDRVInt(void)
 			// Pass Through
 			FMPassThrough = FMDRV_PASSTHROUGH;
 		}
+		PUTCHAR('\n');
 		break;
 	case FMDRV_SETLOOP:
 		if (logicStatus.isCDPlay)
@@ -498,7 +567,7 @@ void ProcessFMDRVInt(void)
 			logicStatus.isCDLoop = data;
 			FMPassThrough = FMDRV_NO_PASSTHROUGH;
 
-			FMDRVReturn(curFMPlayTrack, TRUE);
+			FMDRVSetRetVal(TRUE, curFMPlayTrack);
 		}
 		break;
 	case FMDRV_COMMAND_F0:
@@ -508,6 +577,7 @@ void ProcessFMDRVInt(void)
 		// CD가 바쁘지 않을 때(연주가 멈췄을 때)
 		if (logicStatus.isCDPlay && 0 == tickAlarm[TICKALARM_CHECKBUSY])
 		{
+			PUTCHAR('C'); PUTCHAR('H'); PUTCHAR('K'); PUTCHAR('B'); PUTCHAR('U'); PUTCHAR('S'); PUTCHAR('Y'); PUTCHAR(' ');
 			tickAlarm[TICKALARM_CHECKBUSY] = CDBUSY_CHECKTERM;
 			if (CDAUDIO_BUSY != CDAudio_CheckCDBusy(cddrive))
 			{
@@ -526,6 +596,7 @@ void ProcessFMDRVInt(void)
 					logicStatus.isCDPlay = FALSE;
 				}
 			}
+			PUTCHAR('\n');
 		}
 		break;
 		// FMDRV.COM이 내려가기 시작할 때 호출되는 인터럽트
@@ -651,7 +722,7 @@ void __interrupt __far MyTickInterrupt(union INTPACK r)
 
 	// 틱 인터럽트에서 할 일은 오로지 틱 카운터 계산 뿐이다.
 	// 따라서 다른 인터럽트와 달리 여기서는 스택을 교체하거나 하지 않는다.
-#define TICK_DIVIDER	0x35
+#define TICK_DIVIDER	0x0D
 	if ((uint16)(carryDetect + TICK_DIVIDER) > 0xFF)
 	{
 		// 캐리 발생
@@ -663,7 +734,8 @@ void __interrupt __far MyTickInterrupt(union INTPACK r)
 	}
 
 	// FMDRV가 커스터마이즈한 틱 주기는 1193181/4096 = 291.304 hz 이다.
-	// 이를 256/ = 약7.3으로 나누어서 40hz를 사용한다.
+	// 이를 256/53 = 약4.830으로 나누어서 60hz를 사용한다.
+	// 이것을 더욱 낮추어서 15hz 정도에 맞춘다.
 	carryDetect = (carryDetect + TICK_DIVIDER) & 0xFF;
 
 //CHAINTOPREVHANDLER:
@@ -946,7 +1018,7 @@ uint16 InDOSInt_OpenFile(uint8 flag, char far* filename)
 	if (isErr == TRUE)
 	{
 		globDOSIntregs.w.flags |= INTR_CF;
-		_puthex(retval);
+		PUTHEX(retval);
 	}
 	return retval;
 }
@@ -1106,7 +1178,7 @@ CHAINTOPREVHANDLER:
 		_asm sti;
 
 		// 현재 로딩중인 이 TSR을 언로드한다.
-		//_puthex(freeseg(globData.pspseg));
+		//PUTHEX(freeseg(globData.pspseg));
 		freeseg(globData.pspseg);
 	}
 }

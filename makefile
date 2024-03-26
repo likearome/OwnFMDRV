@@ -39,7 +39,7 @@ OWNFMDRV_MAP   = OWNFMDRV.MAP
 # Compiler settings to optimize for execution time
 MAX_CDAUDIOTRACK=98 	# MSCDEX audiotrack max
 #MAX_CDAUDIOTRACK=42		# Max Koei Soundware tracks
-CFLAGS=-0 -s -d0 -ms -wx -ot -DINTSIG_OFF=23 -DOWNFMDRV_VER="1.3.1" -DMAX_CDAUDIOTRACK=$(MAX_CDAUDIOTRACK)
+CFLAGS=-0 -s -d0 -ms -wx -ot -DINTSIG_OFF=23 -DOWNFMDRV_VER="1.3.2" -DMAX_CDAUDIOTRACK=$(MAX_CDAUDIOTRACK)
 
 # Compiler settings to optimize for memory footprint
 #CFLAGS=-0 -s -d0 -ms -wx -os -DINTSIG_OFF=19

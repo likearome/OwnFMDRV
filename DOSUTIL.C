@@ -5,6 +5,9 @@
 // 이 코드는 메모리에 남는다.
 #pragma code_seg(BEGTEXT, CODE)
 
+// E9 포트는 Bochs와 DosBox에서 디버그 아웃풋 용으로 사용되는 포트이며,
+// 실 기기에서는 아무런 동작도 하지 않는 포트이다.
+
 void _puts(const char* str)
 {
 	union REGPACK r;
@@ -13,7 +16,7 @@ void _puts(const char* str)
 		r.h.al = *str;
 		_asm
 		{
-			int 29h;
+			out 0xE9, AL;
 		}
 
 		if (r.h.al == '\n')
@@ -21,7 +24,7 @@ void _puts(const char* str)
 			_asm
 			{
 				mov AL, 0dh;
-				int 29h;
+				out 0xE9, AL;
 			}
 		}
 	}
@@ -33,7 +36,7 @@ void _putchar(char c)
 	_asm
 	{
 		mov AL, c;
-		int 29h;
+		out 0xE9, AL;
 	}
 
 	if (c == '\n')
@@ -41,7 +44,7 @@ void _putchar(char c)
 		_asm
 		{
 			mov AL, 0dh;
-			int 29h;
+			out 0xE9, AL;
 		}
 	}
 
