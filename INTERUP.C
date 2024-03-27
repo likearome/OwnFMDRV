@@ -400,6 +400,7 @@ void ProcessFMDRVInt(void)
 					}
 				}
 
+				CDAudio_SetVolume(cddrive, 0);
 				CDAudio_PlaySector(cddrive, fromSector + playMargin, toSector);
 				CDAudio_SetVolume(cddrive, orginalCDVolume);
 				logicStatus.isCDPlay = TRUE;
@@ -413,8 +414,8 @@ void ProcessFMDRVInt(void)
 			// 매핑이 없으므로 FM 사운드를 재생한다.
 			if (logicStatus.isCDPlay)
 			{
-				CDAudio_Stop(cddrive);
 				CDAudio_SetVolume(cddrive, 0);
+				CDAudio_Stop(cddrive);
 				logicStatus.isCDPlay = FALSE;
 				logicStatus.isCDLoop = FALSE;
 			}
@@ -451,8 +452,8 @@ void ProcessFMDRVInt(void)
 			if (0 == data)
 			{
 				// AL(data)값이 0이면 지금 즉시 종료이다.
-				CDAudio_Stop(cddrive);
 				CDAudio_SetVolume(cddrive, 0);
+				CDAudio_Stop(cddrive);
 				logicStatus.isCDPlay = FALSE;
 				logicStatus.isCDLoop = FALSE;
 			}
@@ -511,8 +512,8 @@ void ProcessFMDRVInt(void)
 					PUTCHAR('L'); PUTCHAR('D');  PUTCHAR(' ');  PUTHEX(lastStopMusicTickAlarm); PUTCHAR(' ');
 					PUTCHAR('T'); PUTCHAR('A');  PUTCHAR(' ');  PUTHEX(tickAlarm[TICKALARM_STOPMUSIC]); PUTCHAR(' ');
 					PUTCHAR('S'); PUTCHAR('T'); PUTCHAR('O'); PUTCHAR('P'); PUTCHAR(' ');
-					CDAudio_Stop(cddrive);
 					CDAudio_SetVolume(cddrive, 0);
+					CDAudio_Stop(cddrive);
 					stopDelay = 0;
 					firstStopMusicTickAlarm = 0;
 					lastStopMusicTickAlarm = 0;
@@ -584,14 +585,15 @@ void ProcessFMDRVInt(void)
 				if (logicStatus.isCDLoop)
 				{
 					// 루프가 설정돼 있다면 다시 연주를 시작해준다.
+					CDAudio_SetVolume(cddrive, 0);
 					CDAudio_PlaySector(cddrive, fromSector + playMargin, toSector);
 					CDAudio_SetVolume(cddrive, orginalCDVolume);
 				}
 				else
 				{
 					// 루프가 아닐 경우에는 STOP한다.
-					CDAudio_Stop(cddrive);
 					CDAudio_SetVolume(cddrive, 0);
+					CDAudio_Stop(cddrive);
 					logicStatus.isCDLoop = FALSE;
 					logicStatus.isCDPlay = FALSE;
 				}
