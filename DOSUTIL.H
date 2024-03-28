@@ -7,11 +7,12 @@ extern void _put8hex(unsigned hex);
 extern void _put32hex(unsigned long hex);
 extern void _reset_cursor(void);
 
-#define PUTCHAR(ARG)	_putchar(ARG)
-#define PUTHEX(ARG)		_put8hex(ARG)
-#define PUT32HEX(ARG)	_put32hex(ARG)
+//#define PUTCHAR(ARG)	_putchar(ARG)
+//#define PUTHEX(ARG)		_put8hex(ARG)
+//#define PUT32HEX(ARG)	_put32hex(ARG)
 
-//#define PUTCHAR(ARG)
-//#define PUTHEX(ARG)
+#define PUTCHAR(ARG)
+#define PUTHEX(ARG)
+#define PUT32HEX(ARG)
 
 #endif
