@@ -1,4 +1,5 @@
 #include"DOSUTIL.H"
+#include"FMDRVDEF.H"
 #include <i86.h>
 
 /////////////////////////////////////////
@@ -51,10 +52,9 @@ void _putchar(char c)
 	return;
 }
 
-void _puthex(unsigned hex)
+void _putonehex(unsigned hex)
 {
 	char hexval;
-	_putchar('0'); _putchar('x');
 
 	hexval = (hex & 0xF0) >> 4;
 	if (hexval < 10)
@@ -67,6 +67,24 @@ void _puthex(unsigned hex)
 		_putchar('0' + hexval);
 	else
 		_putchar('A' + hexval - 10);
+}
+
+void _put8hex(unsigned hex)
+{
+	_putchar('0'); _putchar('x');
+
+	_putonehex(hex);
+	return;
+}
+
+void _put32hex(uint32 hex)
+{
+	_putchar('0'); _putchar('x');
+
+	_putonehex(hex >> 24 & 0xFF);
+	_putonehex(hex >> 16 & 0xFF);
+	_putonehex(hex >> 8 & 0xFF);
+	_putonehex(hex & 0xFF);
 	return;
 }
 
