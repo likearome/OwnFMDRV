@@ -11,6 +11,7 @@
 
 #define FMDRV_INTERRUPT			0x66
 #define TICK_INTERRUPT			0x08    // 0x08은 실제 타이머 인터럽트. TSR은 08을 직접 후킹해야 한다.
+#define RTC_INTERRUPT			0x70    // BIOS RTC 콜
 #define DOS_INTERRUPT			0x21
 
 #define CDBUSY_CHECKTERM		8		// 15hz 기준. 8이면 0.5초대기
@@ -107,16 +108,20 @@ LogicStatus logicStatus;
 int8 cddrive = 0;
 int8 playMargin = 0;
 uint8 orginalCDVolume = 0;
+uint8 rtcFlag = 0;
 
 // play info
 int8 volatile bufChgFMTrack = -1;
 int8 volatile FMPassThrough = 0;
+uint32 volatile playTime = 0;
+
+uint32 volatile fromSector = 0;
+uint32 volatile toSector = 0;
 
 // tick timer
 enum TickAlarmType
 {
 	TICKALARM_STOPMUSIC = 0,
-	TICKALARM_CHECKBUSY,
 	TICKALARM_MAX
 };
 uint8 volatile tickAlarm[TICKALARM_MAX] = { 0, };
@@ -283,18 +288,40 @@ static uint16 freeseg(uint16 segm)
 ////////////////////////////////////////
 // 인터럽트 핸들러에서 사용하기 위한 스택
 static uint8 FMDRVIntStack[NEWSTACKSZ];
+static uint8 RTCIntStack[NEWSTACKSZ];
 static uint8 DOSIntStack[NEWSTACKSZ];
 
 // 기존 DOS 스택 위치
 uint16 globFMDRVIntOldstackSeg;
 uint16 globFMDRVIntOldstackOff;
+uint16 globRTCIntOldstackSeg;
+uint16 globRTCIntOldstackOff;
 uint16 globDOSIntOldstackSeg;
 uint16 globDOSIntOldstackOff;
 
 /* an INTPACK structure used to store registers as set when INT is called */
 union INTPACK globFMDRVIntregs;
-union INTPACK globTickIntregs;
+union INTPACK globRTCIntregs;
 union INTPACK globDOSIntregs;
+
+uint32 SectorsToSeconds(uint32 sectors)
+{
+	const int8 divisor = 75;
+	const uint16 approxHighDivide = 874;	// 0xFFFF / 75
+	uint16 high = (sectors >> 16) & 0xFFFF;
+	uint16 low = sectors & 0xFFFF;
+	uint32 seconds = 0;
+
+	low /= divisor;
+	low += (high % divisor) * approxHighDivide;
+	high /= divisor;
+
+	seconds = high;
+	seconds <<= 16;
+	seconds |= low;
+
+	return seconds;
+}
 
 inline void FMDRVSetRetVal(int8 lowbyte, int8 highbyte)
 {
@@ -306,9 +333,6 @@ void ProcessFMDRVInt(void)
 	static int8 curCDPlayTrack = -1;	// CDPlayTrack은 0부터 시작하기 때문에, 초기값이 0이면 안된다.
 	static int8 curFMPlayTrack = 0;
 	static int8 prevPlayStep = PLAYSTEP_MAX;
-
-	static uint32 fromSector = 0;
-	static uint32 toSector = 0;
 
 	static uint8 stopDelay = 0;
 	static uint8 firstStopMusicTickAlarm = 0;
@@ -347,6 +371,8 @@ void ProcessFMDRVInt(void)
 
 			fromSector = 0;
 			toSector = 0;
+
+			playTime = 0;
 		}
 		switch (logicStatus.curPlayStep)
 		{
@@ -361,10 +387,19 @@ void ProcessFMDRVInt(void)
 			diffTrack = (curCDPlayTrack != curTrackMap[curFMPlayTrack].track);
 			curCDPlayTrack = curTrackMap[curFMPlayTrack].track;
 
-			diffSector = (fromSector != curTrackMap[curFMPlayTrack].fromSector);
-			fromSector = curTrackMap[curFMPlayTrack].fromSector;
+			if (curCDPlayTrack >= 0)
+			{
+				diffSector = (fromSector != curTrackMap[curFMPlayTrack].fromSector);
+				fromSector = curTrackMap[curFMPlayTrack].fromSector;
 
-			toSector = curTrackMap[curFMPlayTrack].toSector;
+				toSector = curTrackMap[curFMPlayTrack].toSector;
+
+				// 16비트 프로그램에서 32비트 변수 곱셈/나눗셈을 넣으면 C라이브러리가 들어온다.
+				// 우리는 C라이브러리를 사용할 수 없으므로, 나눗셈도 추정계산, 곱셈도 추정계산하기로 한다.
+				// 20비트 좌측 쉬프트를 하면 1,048,576을 곱한 값과 같게 된다.
+				playTime = (SectorsToSeconds(toSector - fromSector) + 3) << 20;
+				PUTCHAR('P'); PUTCHAR('L'); PUTCHAR('A'); PUTCHAR('Y'); PUTCHAR('T'); PUTCHAR('I'); PUTCHAR('M'); PUTCHAR('E'); PUTCHAR(' '); PUT32HEX(playTime); PUTCHAR(' ');
+			}
 		}
 		PUTCHAR('D'); PUTCHAR('F'); PUTCHAR('T'); PUTCHAR('R'); PUTCHAR('K'); PUTCHAR(' '); PUTHEX(diffTrack); PUTCHAR(' ');
 		PUTCHAR('D'); PUTCHAR('F'); PUTCHAR('S'); PUTCHAR('E'); PUTCHAR('C'); PUTCHAR(' '); PUTHEX(diffSector); PUTCHAR(' ');
@@ -571,36 +606,6 @@ void ProcessFMDRVInt(void)
 			FMDRVSetRetVal(TRUE, curFMPlayTrack);
 		}
 		break;
-	case FMDRV_COMMAND_F0:
-	case FMDRV_COMMAND_F1:
-		// 노래가 시작되면 항상 호출되는 타이머 신호
-		// 여기서 노래 루프가 가능할 것으로 예상된다.
-		// CD가 바쁘지 않을 때(연주가 멈췄을 때)
-		if (logicStatus.isCDPlay && 0 == tickAlarm[TICKALARM_CHECKBUSY])
-		{
-			PUTCHAR('C'); PUTCHAR('H'); PUTCHAR('K'); PUTCHAR('B'); PUTCHAR('U'); PUTCHAR('S'); PUTCHAR('Y'); PUTCHAR(' ');
-			tickAlarm[TICKALARM_CHECKBUSY] = CDBUSY_CHECKTERM;
-			if (CDAUDIO_BUSY != CDAudio_CheckCDBusy(cddrive))
-			{
-				if (logicStatus.isCDLoop)
-				{
-					// 루프가 설정돼 있다면 다시 연주를 시작해준다.
-					CDAudio_SetVolume(cddrive, 0);
-					CDAudio_PlaySector(cddrive, fromSector + playMargin, toSector);
-					CDAudio_SetVolume(cddrive, orginalCDVolume);
-				}
-				else
-				{
-					// 루프가 아닐 경우에는 STOP한다.
-					CDAudio_SetVolume(cddrive, 0);
-					CDAudio_Stop(cddrive);
-					logicStatus.isCDLoop = FALSE;
-					logicStatus.isCDPlay = FALSE;
-				}
-			}
-			PUTCHAR('\n');
-		}
-		break;
 		// FMDRV.COM이 내려가기 시작할 때 호출되는 인터럽트
 		// 우리도 미리 준비가 필요하다.
 	case FMDRV_TERMINATE:
@@ -655,8 +660,6 @@ void __interrupt __far MyFMDRVInterrupt(union INTPACK r)
 	case FMDRV_GETSTATUS:
 	case FMDRV_SETLOOP:
 	case FMDRV_TERMINATE:
-	case FMDRV_COMMAND_F0:
-	case FMDRV_COMMAND_F1:
 		break;
 	default:
 		FMPassThrough = FMDRV_PASSTHROUGH;
@@ -744,6 +747,235 @@ void __interrupt __far MyTickInterrupt(union INTPACK r)
 	_mvchain_intr(MK_FP(globData.prev_tick_handler_seg, globData.prev_tick_handler_off));
 }
 
+uint16 __declspec(naked) ReadRTC(uint16 regnum)
+{
+	(void)regnum;
+	_asm
+	{
+		pushf
+		cli
+		mov ax, dx		// 레지스터 지정
+		or al, 80h			// Non-maskable Interrupt 막기
+		out 70h, al
+
+		jmp pause1			// ##### 시간 끌기
+		pause1:
+
+		in al, 71h			// 리턴값을 al에 받음
+		push ax
+
+		jmp pause2			// ##### 시간 끌기
+		pause2 :
+		
+		mov al, 0dh			// D 레지스터를 지정함과 동시에 Non-maskable Interrupt 허용
+		out 70h, al
+
+		jmp pause3			// ##### 시간 끌기
+		pause3 :
+
+		in al, 71h
+		pop ax
+		popf
+
+		ret
+	}
+}
+#pragma aux ReadRTC parm [dx] value [ax] modify exact [ax dx] nomemory;
+
+uint16 __declspec(naked) SetRTC(uint16 regnum, uint16 val)
+{
+	(void)regnum;
+	(void)val;
+	_asm
+	{
+		pushf
+		push ax
+		cli
+		mov ax, bx
+		or al, 80h
+		out 70h, al
+
+		jmp pause1			// ##### 시간 끌기
+		pause1 :
+
+		mov ax, dx
+		out 71h, al
+
+		jmp pause2			// ##### 시간 끌기
+		pause2 :
+
+		mov al, 0dh
+		out 70h, al
+
+		jmp pause3			// ##### 시간 끌기
+		pause3 :
+
+		in al, 71h
+		pop ax
+		popf
+
+		ret
+	}
+}
+#pragma aux SetRTC parm [bx] [dx] value [ax] modify exact [ax bx dx] nomemory;
+
+
+// CMOS/RTC 기능
+// 0x70포트가 인덱스 포트. 레지스터를 선택할 수 있다. 일반적으로 A/B/C/D를 사용
+// 0x71포트가 데이터 포트.
+void InstallRTC(void)
+{
+	// 1단계: RTC 사용 선언
+	{
+		uint8 curRTCRegBStatus = ReadRTC(0x0B);
+		curRTCRegBStatus |= 0x40;	// 이제부터 주기적 인터럽트를 사용할 것임을 알림
+		SetRTC(0x0B, curRTCRegBStatus);
+	}
+
+	// 2단계: 인터럽트 주기 변경 (2 hz)
+	{
+		uint8 curRTCRegAStatus = ReadRTC(0x0A);
+		curRTCRegAStatus &= 0xF0;	// rate selection bit를 클리어하여 이번에 새 hz가 설정됨을 알림
+		curRTCRegAStatus |= 0x0F;	// 2 hz로 조정
+		SetRTC(0x0A, curRTCRegAStatus);
+	}
+
+	// 3단계: secondary PIC를 초기화
+	_asm
+	{
+		cli
+		in	AL, 0xA1
+		and	AL, 0xFE
+		
+		jmp pause1
+		pause1:
+
+		out 0xA1, AL
+		sti
+	}
+}
+
+void UninstallRTC(void)
+{
+	// 1단계: RTC 해제 선언
+	{
+		uint8 curRTCRegBStatus = ReadRTC(0x0B);
+		curRTCRegBStatus &= 0xBF;	// 이제부터 주기적 인터럽트를 사용하지 않을 것임을 알림
+		SetRTC(0x0B, curRTCRegBStatus);
+	}
+
+	// 2단계: 기본 주파수인 1024hz로 되돌림
+	{
+		uint8 curRTCRegAStatus = ReadRTC(0x0A);
+		curRTCRegAStatus &= 0xF0;	// rate selection bit를 클리어하여 이번에 새 hz가 설정됨을 알림
+		curRTCRegAStatus |= 0x6;	// 기본값인 1024 hz로 되돌리기
+		SetRTC(0x0A, curRTCRegAStatus);
+	}
+}
+
+void ProcessRTCInt(void)
+{
+	// 노래가 시작되면 항상 호출되는 타이머 신호
+	// 여기서 노래 루프가 가능할 것으로 예상된다.
+	// CD가 바쁘지 않을 때(연주가 멈췄을 때)
+	if (logicStatus.isCDPlay)
+	{
+		PUTCHAR('C'); PUTCHAR('H'); PUTCHAR('K'); PUTCHAR('B'); PUTCHAR('U'); PUTCHAR('S'); PUTCHAR('Y'); PUTCHAR('=');
+		if (CDAUDIO_BUSY != CDAudio_CheckCDBusy(cddrive))
+		{
+			PUTCHAR('N'); PUTCHAR('O'); PUTCHAR(' '); PUTCHAR('B'); PUTCHAR('U'); PUTCHAR('S'); PUTCHAR('Y'); PUTCHAR(' ');
+			if (logicStatus.isCDLoop)
+			{
+				PUTCHAR('L'); PUTCHAR('O'); PUTCHAR('O'); PUTCHAR('P'); PUTCHAR(' ');
+				// 루프가 설정돼 있다면 다시 연주를 시작해준다.
+				CDAudio_SetVolume(cddrive, 0);
+				CDAudio_PlaySector(cddrive, fromSector + playMargin, toSector);
+				CDAudio_SetVolume(cddrive, orginalCDVolume);
+			}
+			else
+			{
+				PUTCHAR('N'); PUTCHAR('O'); PUTCHAR(' '); PUTCHAR('L'); PUTCHAR('O'); PUTCHAR('O'); PUTCHAR('P'); PUTCHAR(' ');
+				// 루프가 아닐 경우에는 STOP한다.
+				CDAudio_SetVolume(cddrive, 0);
+				CDAudio_Stop(cddrive);
+				logicStatus.isCDLoop = FALSE;
+				logicStatus.isCDPlay = FALSE;
+			}
+		}
+		PUTCHAR('B'); PUTCHAR('U'); PUTCHAR('S'); PUTCHAR('Y'); PUTCHAR(' ');
+		PUTCHAR('\n');
+	}
+}
+
+void __interrupt __far MyRTCInterrupt(union INTPACK r)
+{
+	// ### 아래에서 스택 포인터를 바꾸기 때문에,
+	// 여기에 로컬 변수(스택할당)을 선언한 뒤에 스택 포인터 바꾸고 난 위치에서 사용하면 안된다.
+	// 그리고 DS도 교체한다.
+	_asm
+	{
+		push ax         // AX 보존
+		mov ax, ds;
+
+		// CS:glob_newds에 보존된 우리 데이터 세그먼트를 ds에 덮어쓰기
+		mov ax, cs:glob_newds
+		mov ds, ax
+
+		pop ax          // AX 복원
+	}
+
+	// 파라미터로 입력받은 (실제로는 스택에 저장된) 인터럽트 레지스터 상태값 r을 별도 전역변수에 보존한다.
+	// 그래야 이 인터럽트를 실행하고 바뀐 레지스터값이 아닌, 첫 호출자(caller)가 보냈던 인터럽트를 그대로
+	// 체인된 다음 인터럽트에 보내줄 수 있다.
+	mymemcpy(&globRTCIntregs, &r, sizeof(union INTPACK));
+	// 스택 포인터를 전역변수 공간으로 이동한다.
+	_asm
+	{
+		cli //인터럽트를 중지하여, 다른 인터럽트가 스택 변환중 문제가 발생하지 않도록 조치한다.
+		mov globRTCIntOldstackSeg, SS
+		mov globRTCIntOldstackOff, SP
+
+		// 현재 DS를 스택 세그먼트에 덮어쓴다.
+		mov ax, ds
+		mov ss, ax
+
+		// 스택 포인터에 newstack의 맨 뒷부분 바로 앞 (+NEWSTACKSZ-2) 위치를 덮어쓴다.
+		mov sp, offset RTCIntStack + NEWSTACKSZ - 2
+		sti // 인터럽트를 재개한다.
+	}
+
+	ReadRTC(0x0C); // RTC의 레지스터 C를 읽는 행위를 함으로써 다음 인터럽트를 받을 수 있다.
+	ProcessRTCInt();
+
+	// 스택을 원래로 돌린다.
+	_asm
+	{
+		cli //인터럽트를 중지하여, 다른 인터럽트가 스택 변환중 문제가 발생하지 않도록 조치한다.
+
+		// 원래의 스택 포인터를 반환한다.
+		mov SS, globRTCIntOldstackSeg
+		mov SP, globRTCIntOldstackOff
+		sti // 인터럽트를 재개한다.
+	}
+
+	// r의 레지스터를 모두 복원하여 이 값이 함수를 빠져나간 뒤에 정상적으로 세팅될 수 있도록 한다.
+	mymemcpy(&r, &globRTCIntregs, sizeof(union INTPACK));
+
+	// End of Interrupt를 각각의 PIC에 직접 날려준다.
+	_asm
+	{
+		cli
+		mov AL, 0x20		// EOI 플래그
+		out 0xA0, AL		// secondary PIC
+		out 0x20, AL		// primary PIC
+		sti
+	}
+
+	// 이전 RTC 핸들러를 호출하지 않고, 직접 컨트롤한다.
+	//_mvchain_intr(MK_FP(globData.prev_rtc_handler_seg, globData.prev_rtc_handler_off));
+}
+
+
 void InDOSInt_SetInterruptVector(uint8 intnum, void far* vector)
 {
 	void (__interrupt __far * oldDOSInt)() = _MK_FP(globData.prev_dos_handler_seg, globData.prev_dos_handler_off);
@@ -829,6 +1061,15 @@ void ProcessDOSInt_SetIntr(uint8 intnum, void far* vector)
 					_asm sti; // 인터럽트를 다시 활성화한다.
 
 					logicStatus.isFMDRVSet = TRUE;
+
+					// RTC 인터럽트 타이머를 활성화한다.
+					_asm
+					{
+						jmp SKIPTSRSIG
+						TSRSIG db 'RTC'
+						SKIPTSRSIG:
+					}
+					InstallRTC();
 				}
 			}
 		}
@@ -1174,9 +1415,12 @@ CHAINTOPREVHANDLER:
 	}
 	else
 	{
+		UninstallRTC();
+
 		_asm cli;
 		// 모든 인터럽트들을 제자리에 되돌려놓는다.
 		InDOSInt_SetInterruptVector(DOS_INTERRUPT, _MK_FP(globData.prev_dos_handler_seg, globData.prev_dos_handler_off));
+		InDOSInt_SetInterruptVector(RTC_INTERRUPT, _MK_FP(globData.prev_rtc_handler_seg, globData.prev_rtc_handler_off));
 		_asm sti;
 
 		// 현재 로딩중인 이 TSR을 언로드한다.
@@ -1343,6 +1587,17 @@ int SetupInterrupt(uint16 newcs, uint16 newds)
 	RESTORE_DS_FROM_OLDDS;
 	// 보내주는 세그먼트로 교체
 	_dos_setvect(DOS_INTERRUPT, MK_FP(newcs, _FP_OFF(MyDOSInterrupt)));
+
+	// 반복 연주를 위해 RTC 인터럽트를 후킹한다.
+	oldInt = _dos_getvect(RTC_INTERRUPT);
+	SET_DS_TO_NEWDS;
+	{
+		globData.prev_rtc_handler_seg = _FP_SEG(oldInt);
+		globData.prev_rtc_handler_off = _FP_OFF(oldInt);
+	}
+	RESTORE_DS_FROM_OLDDS;
+	// 보내주는 세그먼트로 교체
+	_dos_setvect(RTC_INTERRUPT, MK_FP(newcs, _FP_OFF(MyRTCInterrupt)));
 
 	_enable();
 
