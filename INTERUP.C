@@ -708,6 +708,7 @@ CHAINTOPREVHANDLER:
 void __interrupt __far MyTickInterrupt(union INTPACK r)
 {
 	static uint8 carryDetect = 0;
+	static uint8 subCount = 0;
 	(void)r;
 
 	_asm
@@ -724,20 +725,26 @@ void __interrupt __far MyTickInterrupt(union INTPACK r)
 
 	// 틱 인터럽트에서 할 일은 오로지 틱 카운터 계산 뿐이다.
 	// 따라서 다른 인터럽트와 달리 여기서는 스택을 교체하거나 하지 않는다.
-#define TICK_DIVIDER	0x0D
+#define TICK_DIVIDER	0x35
 	if ((uint16)(carryDetect + TICK_DIVIDER) > 0xFF)
 	{
 		// 캐리 발생
 		int i;
-		for (i = 0; i < TICKALARM_MAX; ++i)
+
+		// subCount로 인해 실제로는 15.077hz에 가까운 값이 된다.
+		subCount++;
+		if (subCount >= 4)
 		{
-			if (tickAlarm[i] > 0) tickAlarm[i]--;
+			subCount = 0;
+			for (i = 0; i < TICKALARM_MAX; ++i)
+			{
+				if (tickAlarm[i] > 0) tickAlarm[i]--;
+			}
 		}
 	}
 
 	// FMDRV가 커스터마이즈한 틱 주기는 1193181/4096 = 291.304 hz 이다.
-	// 이를 256/53 = 약4.830으로 나누어서 60hz를 사용한다.
-	// 이것을 더욱 낮추어서 15hz 정도에 맞춘다.
+	// 이를 256/53 = 약4.830으로 나누어서 60.309hz를 사용한다.
 	carryDetect = (carryDetect + TICK_DIVIDER) & 0xFF;
 
 //CHAINTOPREVHANDLER:
