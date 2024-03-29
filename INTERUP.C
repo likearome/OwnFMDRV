@@ -112,6 +112,10 @@ uint8 orginalCDVolume = 0;
 int8 volatile bufChgFMTrack = -1;
 int8 volatile FMPassThrough = 0;
 
+uint8 volatile stopDelay = 0;
+uint8 volatile firstStopMusicTickAlarm = 0;
+uint8 volatile lastStopMusicTickAlarm = 0;
+
 // tick timer
 enum TickAlarmType
 {
@@ -301,6 +305,63 @@ inline void FMDRVSetRetVal(int8 lowbyte, int8 highbyte)
 	globFMDRVIntregs.w.ax = ((highbyte << 8) & 0xFF00) | lowbyte;
 }
 
+bool GracefulCDStop(void)
+{
+	bool retval = FALSE;
+	if (0 != stopDelay)
+	{
+		// 삼국지 3 등에서는 STOP신호가 오고 조금의 딜레이 이후에 GETSTATUS가 호출되기 때문에
+		// 급격한 볼륨 다운이 느껴질 수 있다.
+		// 이를 방지하기 위해 STOP이후 첫번째 GETSTATUS가 들어왔을 때의 값을 바탕으로 볼륨을 조절한다.
+		if (0 == firstStopMusicTickAlarm)
+			firstStopMusicTickAlarm = tickAlarm[TICKALARM_STOPMUSIC];
+		// 노래가 연주중이지만 Stop 싸인은 왔음
+		if (0 < firstStopMusicTickAlarm && 0 < tickAlarm[TICKALARM_STOPMUSIC])
+		{
+			// 볼륨을 서서히 낮춘다.
+			if (lastStopMusicTickAlarm != tickAlarm[TICKALARM_STOPMUSIC])
+			{
+				uint8 newVol = ((uint16)orginalCDVolume * tickAlarm[TICKALARM_STOPMUSIC] / firstStopMusicTickAlarm) & 0xFF;
+				CDAudio_SetVolume(cddrive, newVol);
+				lastStopMusicTickAlarm = tickAlarm[TICKALARM_STOPMUSIC];
+
+				PUTCHAR('F'); PUTCHAR('M'); PUTCHAR('D'); PUTCHAR('R'); PUTCHAR('V');
+				PUTCHAR('_'); PUTCHAR('T'); PUTCHAR('I'); PUTCHAR('M'); PUTCHAR('E'); PUTCHAR('R'); PUTCHAR(' ');
+
+				PUTCHAR('S'); PUTCHAR('D');  PUTCHAR(' ');  PUTHEX(stopDelay); PUTCHAR(' ');
+				PUTCHAR('F'); PUTCHAR('D');  PUTCHAR(' ');  PUTHEX(firstStopMusicTickAlarm); PUTCHAR(' ');
+				PUTCHAR('L'); PUTCHAR('D');  PUTCHAR(' ');  PUTHEX(lastStopMusicTickAlarm); PUTCHAR(' ');
+				PUTCHAR('T'); PUTCHAR('A');  PUTCHAR(' ');  PUTHEX(tickAlarm[TICKALARM_STOPMUSIC]); PUTCHAR(' ');
+
+				PUTCHAR('V'); PUTCHAR('O'); PUTCHAR('L'); PUTCHAR(' ');  PUTHEX(newVol);
+			}
+		}
+		else
+		{
+			PUTCHAR('F'); PUTCHAR('M'); PUTCHAR('D'); PUTCHAR('R'); PUTCHAR('V');
+			PUTCHAR('_'); PUTCHAR('T'); PUTCHAR('I'); PUTCHAR('M'); PUTCHAR('E'); PUTCHAR('R'); PUTCHAR(' ');
+
+			PUTCHAR('S'); PUTCHAR('D');  PUTCHAR(' ');  PUTHEX(stopDelay); PUTCHAR(' ');
+			PUTCHAR('F'); PUTCHAR('D');  PUTCHAR(' ');  PUTHEX(firstStopMusicTickAlarm); PUTCHAR(' ');
+			PUTCHAR('L'); PUTCHAR('D');  PUTCHAR(' ');  PUTHEX(lastStopMusicTickAlarm); PUTCHAR(' ');
+			PUTCHAR('T'); PUTCHAR('A');  PUTCHAR(' ');  PUTHEX(tickAlarm[TICKALARM_STOPMUSIC]); PUTCHAR(' ');
+			PUTCHAR('S'); PUTCHAR('T'); PUTCHAR('O'); PUTCHAR('P'); PUTCHAR(' ');
+			CDAudio_SetVolume(cddrive, 0);
+			CDAudio_Stop(cddrive);
+			stopDelay = 0;
+			firstStopMusicTickAlarm = 0;
+			lastStopMusicTickAlarm = 0;
+			logicStatus.isCDPlay = FALSE;
+			logicStatus.isCDLoop = FALSE;
+
+			retval = TRUE;
+		}
+	}
+	PUTCHAR('\n');
+
+	return retval;
+}
+
 void ProcessFMDRVInt(void)
 {
 	static int8 curCDPlayTrack = -1;	// CDPlayTrack은 0부터 시작하기 때문에, 초기값이 0이면 안된다.
@@ -309,10 +370,6 @@ void ProcessFMDRVInt(void)
 
 	static uint32 fromSector = 0;
 	static uint32 toSector = 0;
-
-	static uint8 stopDelay = 0;
-	static uint8 firstStopMusicTickAlarm = 0;
-	static uint8 lastStopMusicTickAlarm = 0;
 
 	uint8 register command;
 	uint8 register data;
@@ -443,99 +500,63 @@ void ProcessFMDRVInt(void)
 		break;
 	case FMDRV_STOP:
 		PUTCHAR('F'); PUTCHAR('M'); PUTCHAR('D'); PUTCHAR('R'); PUTCHAR('V');
-		PUTCHAR('_'); PUTCHAR('S'); PUTCHAR('T'); PUTCHAR('O'); PUTCHAR('P');
-		PUTCHAR('\n');
+		PUTCHAR('_'); PUTCHAR('S'); PUTCHAR('T'); PUTCHAR('O'); PUTCHAR('P'); PUTCHAR(' ');
 		// 연주 종료
 		if (logicStatus.isCDPlay)
 		{
-			//FMPassThrough = FMDRV_NO_PASSTHROUGH;
-			if (0 == data)
+			PUTCHAR('C'); PUTCHAR('D'); PUTCHAR(' '); PUTCHAR('P'); PUTCHAR('L'); PUTCHAR('A'); PUTCHAR('Y'); PUTCHAR(' ');
+			PUTCHAR('S'); PUTCHAR('T'); PUTCHAR('O'); PUTCHAR('P'); PUTCHAR(' ');
+			FMPassThrough = FMDRV_NO_PASSTHROUGH;
+			if (0 != stopDelay || 0 == data)
 			{
-				// AL(data)값이 0이면 지금 즉시 종료이다.
+				// AL(data)이 0이거나 페이드아웃 중에 STOP이 또 왔으면 즉시 종료한다.
+				PUTCHAR('I'); PUTCHAR('M'); PUTCHAR('M'); PUTCHAR('E'); PUTCHAR('D'); PUTCHAR('I'); PUTCHAR('A'); PUTCHAR('T'); PUTCHAR('E'); PUTCHAR('L'); PUTCHAR('Y'); PUTCHAR(' ');
 				CDAudio_SetVolume(cddrive, 0);
 				CDAudio_Stop(cddrive);
+				stopDelay = 0;
+				firstStopMusicTickAlarm = 0;
+				lastStopMusicTickAlarm = 0;
 				logicStatus.isCDPlay = FALSE;
 				logicStatus.isCDLoop = FALSE;
+				FMDRVSetRetVal(FALSE, 0);
 			}
 			else
 			{
+				PUTCHAR('S'); PUTCHAR('T'); PUTCHAR('O'); PUTCHAR('P'); PUTCHAR(' ');
+				PUTCHAR('D'); PUTCHAR('U'); PUTCHAR('R'); PUTCHAR('I'); PUTCHAR('N'); PUTCHAR('G'); PUTCHAR(' '); PUTHEX(data); PUTCHAR(' ');
 				// data 카운트만큼 Fade-out을 연출하고 종료한다.
 				// 틱 타이머를 활성화한다.
 				stopDelay = data;
 				tickAlarm[TICKALARM_STOPMUSIC] = stopDelay;
 				lastStopMusicTickAlarm = stopDelay;
+				FMDRVSetRetVal(TRUE, curFMPlayTrack);
 			}
+		}
+		else if(logicStatus.isFMPlay)
+		{
+			PUTCHAR('F'); PUTCHAR('M'); PUTCHAR(' '); PUTCHAR('P'); PUTCHAR('L'); PUTCHAR('A'); PUTCHAR('Y'); PUTCHAR(' ');
+			PUTCHAR('S'); PUTCHAR('T'); PUTCHAR('O'); PUTCHAR('P'); PUTCHAR(' ');
+		}
+		else
+		{
+			// 중지 상태인데 중지가 또 왔다.
+			PUTCHAR('N'); PUTCHAR('O'); PUTCHAR(' '); PUTCHAR('P'); PUTCHAR('L'); PUTCHAR('A'); PUTCHAR('Y'); PUTCHAR(' ');
+			FMPassThrough = FMDRV_NO_PASSTHROUGH;
 			FMDRVSetRetVal(FALSE, 0);
 		}
+		PUTCHAR('\n');
 		break;
 	case FMDRV_GETSTATUS:
 		// Fade-out 같은 볼륨 조절 등에서 사용되는 곳이다.
 		if (logicStatus.isCDPlay)
 		{
-			if (0 != stopDelay)
+			FMPassThrough = FMDRV_NO_PASSTHROUGH;
+			if (GracefulCDStop())
 			{
-				// 삼국지 3 등에서는 STOP신호가 오고 조금의 딜레이 이후에 GETSTATUS가 호출되기 때문에
-				// 급격한 볼륨 다운이 느껴질 수 있다.
-				// 이를 방지하기 위해 STOP이후 첫번째 GETSTATUS가 들어왔을 때의 값을 바탕으로 볼륨을 조절한다.
-				if (0 == firstStopMusicTickAlarm)
-					firstStopMusicTickAlarm = tickAlarm[TICKALARM_STOPMUSIC];
-				// 노래가 연주중이지만 Stop 싸인은 왔음
-				if (0 < firstStopMusicTickAlarm && 0 < tickAlarm[TICKALARM_STOPMUSIC])
-				{
-					// 볼륨을 서서히 낮춘다.
-					if (lastStopMusicTickAlarm != tickAlarm[TICKALARM_STOPMUSIC])
-					{
-						uint8 newVol = ((uint16)orginalCDVolume * tickAlarm[TICKALARM_STOPMUSIC] / firstStopMusicTickAlarm) & 0xFF;
-						CDAudio_SetVolume(cddrive, newVol);
-						lastStopMusicTickAlarm = tickAlarm[TICKALARM_STOPMUSIC];
-						PUTCHAR('F'); PUTCHAR('M'); PUTCHAR('D'); PUTCHAR('R'); PUTCHAR('V');
-						PUTCHAR('_'); PUTCHAR('G'); PUTCHAR('E'); PUTCHAR('T'); PUTCHAR('S'); PUTCHAR('T'); PUTCHAR('A'); PUTCHAR('T'); PUTCHAR('U'); PUTCHAR('S'); PUTCHAR(' ');
-
-						PUTCHAR('S'); PUTCHAR('D');  PUTCHAR(' ');  PUTHEX(stopDelay); PUTCHAR(' ');
-						PUTCHAR('F'); PUTCHAR('D');  PUTCHAR(' ');  PUTHEX(firstStopMusicTickAlarm); PUTCHAR(' ');
-						PUTCHAR('L'); PUTCHAR('D');  PUTCHAR(' ');  PUTHEX(lastStopMusicTickAlarm); PUTCHAR(' ');
-						PUTCHAR('T'); PUTCHAR('A');  PUTCHAR(' ');  PUTHEX(tickAlarm[TICKALARM_STOPMUSIC]); PUTCHAR(' ');
-
-						PUTCHAR('V'); PUTCHAR('O'); PUTCHAR('L'); PUTCHAR(' ');  PUTHEX(newVol);
-					}
-
-					FMPassThrough = FMDRV_NO_PASSTHROUGH;
-					FMDRVSetRetVal(TRUE, curFMPlayTrack);	// 노래가 아직 연주중
-				}
-				else
-				{
-					PUTCHAR('F'); PUTCHAR('M'); PUTCHAR('D'); PUTCHAR('R'); PUTCHAR('V');
-					PUTCHAR('_'); PUTCHAR('G'); PUTCHAR('E'); PUTCHAR('T'); PUTCHAR('S'); PUTCHAR('T'); PUTCHAR('A'); PUTCHAR('T'); PUTCHAR('U'); PUTCHAR('S'); PUTCHAR(' ');
-
-					PUTCHAR('S'); PUTCHAR('D');  PUTCHAR(' ');  PUTHEX(stopDelay); PUTCHAR(' ');
-					PUTCHAR('F'); PUTCHAR('D');  PUTCHAR(' ');  PUTHEX(firstStopMusicTickAlarm); PUTCHAR(' ');
-					PUTCHAR('L'); PUTCHAR('D');  PUTCHAR(' ');  PUTHEX(lastStopMusicTickAlarm); PUTCHAR(' ');
-					PUTCHAR('T'); PUTCHAR('A');  PUTCHAR(' ');  PUTHEX(tickAlarm[TICKALARM_STOPMUSIC]); PUTCHAR(' ');
-					PUTCHAR('S'); PUTCHAR('T'); PUTCHAR('O'); PUTCHAR('P'); PUTCHAR(' ');
-					CDAudio_SetVolume(cddrive, 0);
-					CDAudio_Stop(cddrive);
-					stopDelay = 0;
-					firstStopMusicTickAlarm = 0;
-					lastStopMusicTickAlarm = 0;
-					logicStatus.isCDPlay = FALSE;
-					logicStatus.isCDLoop = FALSE;
-
-					FMPassThrough = FMDRV_NO_PASSTHROUGH;
-					FMDRVSetRetVal(FALSE, 0);	// 노래가 연주중이지 않음
-				}
+				FMDRVSetRetVal(FALSE, 0);	// 노래가 중지됨
 			}
 			else
 			{
-				PUTCHAR('F'); PUTCHAR('M'); PUTCHAR('D'); PUTCHAR('R'); PUTCHAR('V');
-				PUTCHAR('_'); PUTCHAR('G'); PUTCHAR('E'); PUTCHAR('T'); PUTCHAR('S'); PUTCHAR('T'); PUTCHAR('A'); PUTCHAR('T'); PUTCHAR('U'); PUTCHAR('S'); PUTCHAR(' ');
-
-				PUTCHAR('S'); PUTCHAR('D');  PUTCHAR(' ');  PUTHEX(stopDelay); PUTCHAR(' ');
-				PUTCHAR('F'); PUTCHAR('D');  PUTCHAR(' ');  PUTHEX(firstStopMusicTickAlarm); PUTCHAR(' ');
-				PUTCHAR('L'); PUTCHAR('D');  PUTCHAR(' ');  PUTHEX(lastStopMusicTickAlarm); PUTCHAR(' ');
-				PUTCHAR('T'); PUTCHAR('A');  PUTCHAR(' ');  PUTHEX(tickAlarm[TICKALARM_STOPMUSIC]); PUTCHAR(' ');
-				PUTCHAR('N'); PUTCHAR('O'); PUTCHAR('R'); PUTCHAR('M'); PUTCHAR('A'); PUTCHAR('L'); PUTCHAR(' ');
-				// Stop 싸인이 오지 않았으며 노래가 정상 연주중임
-				FMPassThrough = FMDRV_NO_PASSTHROUGH;
 				FMDRVSetRetVal(TRUE, curFMPlayTrack);	// 노래가 아직 연주중
 			}
 		}
@@ -549,7 +570,7 @@ void ProcessFMDRVInt(void)
 			PUTCHAR('L'); PUTCHAR('D');  PUTCHAR(' ');  PUTHEX(lastStopMusicTickAlarm); PUTCHAR(' ');
 			PUTCHAR('T'); PUTCHAR('A');  PUTCHAR(' ');  PUTHEX(tickAlarm[TICKALARM_STOPMUSIC]); PUTCHAR(' ');
 			PUTCHAR('F'); PUTCHAR('M'); PUTCHAR('N'); PUTCHAR('O'); PUTCHAR('S'); PUTCHAR('O'); PUTCHAR('N'); PUTCHAR('D'); PUTCHAR(' ');
-			// CD가 연주중이지 않음
+			// CD가 연주중이지 않고, FM음악도 연주중이지 않다.
 			// 우리가 응답하고 FMDRV에는 전달하지 않는다.
 			FMPassThrough = FMDRV_NO_PASSTHROUGH;
 			FMDRVSetRetVal(FALSE, 0);	// 노래가 연주중이지 않음
@@ -573,32 +594,41 @@ void ProcessFMDRVInt(void)
 		break;
 	case FMDRV_COMMAND_F0:
 	case FMDRV_COMMAND_F1:
-		// 노래가 시작되면 항상 호출되는 타이머 신호
-		// 여기서 노래 루프가 가능할 것으로 예상된다.
-		// CD가 바쁘지 않을 때(연주가 멈췄을 때)
-		if (logicStatus.isCDPlay && 0 == tickAlarm[TICKALARM_CHECKBUSY])
+		if (logicStatus.isCDPlay)
 		{
-			PUTCHAR('C'); PUTCHAR('H'); PUTCHAR('K'); PUTCHAR('B'); PUTCHAR('U'); PUTCHAR('S'); PUTCHAR('Y'); PUTCHAR(' ');
-			tickAlarm[TICKALARM_CHECKBUSY] = CDBUSY_CHECKTERM;
-			if (CDAUDIO_BUSY != CDAudio_CheckCDBusy(cddrive))
+			// 노래 루프
+			// 정지 신호가 오지 않았을 때에만 확인한다.
+			if (0 == stopDelay && 0 == tickAlarm[TICKALARM_CHECKBUSY])
 			{
-				if (logicStatus.isCDLoop)
+				// 항상 호출되는 타이머 신호
+				PUTCHAR('F'); PUTCHAR('M'); PUTCHAR('D'); PUTCHAR('R'); PUTCHAR('V');
+				PUTCHAR('_'); PUTCHAR('T'); PUTCHAR('I'); PUTCHAR('M'); PUTCHAR('E'); PUTCHAR('R'); PUTCHAR(' ');
+
+				PUTCHAR('C'); PUTCHAR('H'); PUTCHAR('K'); PUTCHAR('B'); PUTCHAR('U'); PUTCHAR('S'); PUTCHAR('Y'); PUTCHAR(' ');
+				tickAlarm[TICKALARM_CHECKBUSY] = CDBUSY_CHECKTERM;
+				if (CDAUDIO_BUSY != CDAudio_CheckCDBusy(cddrive))
 				{
-					// 루프가 설정돼 있다면 다시 연주를 시작해준다.
-					CDAudio_SetVolume(cddrive, 0);
-					CDAudio_PlaySector(cddrive, fromSector + playMargin, toSector);
-					CDAudio_SetVolume(cddrive, orginalCDVolume);
+					// CD가 바쁘지 않을 때(연주가 멈췄을 때)
+					if (logicStatus.isCDLoop)
+					{
+						// 루프가 설정돼 있다면 다시 연주를 시작해준다.
+						CDAudio_SetVolume(cddrive, 0);
+						CDAudio_PlaySector(cddrive, fromSector + playMargin, toSector);
+						CDAudio_SetVolume(cddrive, orginalCDVolume);
+					}
+					else
+					{
+						// 루프가 아닐 경우에는 STOP한다.
+						CDAudio_SetVolume(cddrive, 0);
+						CDAudio_Stop(cddrive);
+						logicStatus.isCDLoop = FALSE;
+						logicStatus.isCDPlay = FALSE;
+					}
 				}
-				else
-				{
-					// 루프가 아닐 경우에는 STOP한다.
-					CDAudio_SetVolume(cddrive, 0);
-					CDAudio_Stop(cddrive);
-					logicStatus.isCDLoop = FALSE;
-					logicStatus.isCDPlay = FALSE;
-				}
+				PUTCHAR('\n');
 			}
-			PUTCHAR('\n');
+
+			GracefulCDStop();
 		}
 		break;
 		// FMDRV.COM이 내려가기 시작할 때 호출되는 인터럽트
@@ -801,10 +831,11 @@ void ProcessDOSInt_SetIntr(uint8 intnum, void far* vector)
 		{
 			if (_MK_FP(curcs, _FP_OFF(MyFMDRVInterrupt)) != vector)
 			{
-				// 여기서는 66번의 Restore를 막지 않고 인터럽트를 체이닝한다.
-				// 실제 FMDRV.COM쪽에서 66번의 핸들러의 원래 값을 알고 있기 때문이다.
-				// 우리는 66번 핸들러를 교체하지 않는다.
+				// 이미 셋 된 상태에서 새로 셋하는 것은 게임을 되돌려놓으려는 시도이다.
+				// 이 때 보내준 vector가 진실로 되돌려놓아야 할 핸들러이다.
+				// 차후에 TerminateTSR 단계에서 되돌려주도록 하자.
 				logicStatus.isFMDRVSet = FALSE;
+				InDOSInt_SetInterruptVector(FMDRV_INTERRUPT, vector);
 				if (logicStatus.isCDPlay)
 				{
 					CDAudio_Stop(cddrive);
@@ -846,10 +877,11 @@ void ProcessDOSInt_SetIntr(uint8 intnum, void far* vector)
 		{
 			if (_MK_FP(curcs, _FP_OFF(MyTickInterrupt)) != vector)
 			{
-				// 여기서는 08번의 Restore를 막지 않고 인터럽트를 체이닝한다.
-				// 실제 FMDRV.COM쪽에서 08번의 핸들러의 원래 값을 알고 있기 때문이다.
-				// 우리는 08번 핸들러를 교체하지 않는다.
+				// 이미 셋 된 상태에서 새로 셋하는 것은 게임을 되돌려놓으려는 시도이다.
+				// 이 때 보내준 vector가 진실로 되돌려놓아야 할 핸들러이다.
+				// 차후에 TerminateTSR 단계에서 되돌려주도록 하자.
 				logicStatus.isTickSet = FALSE;
+				InDOSInt_SetInterruptVector(TICK_INTERRUPT, vector);
 				terminateTSR = TRUE;
 			}
 		}
@@ -1181,14 +1213,18 @@ CHAINTOPREVHANDLER:
 	}
 	else
 	{
-		_asm cli;
-		// 모든 인터럽트들을 제자리에 되돌려놓는다.
-		InDOSInt_SetInterruptVector(DOS_INTERRUPT, _MK_FP(globData.prev_dos_handler_seg, globData.prev_dos_handler_off));
-		_asm sti;
+		// 모든 인터럽트의 해제가 끝났으면 우리도 빠져나간다.
+		if (FALSE == logicStatus.isFMDRVSet && FALSE == logicStatus.isTickSet)
+		{
+			_asm cli;
+			// 모든 인터럽트들을 제자리에 되돌려놓는다.
+			InDOSInt_SetInterruptVector(DOS_INTERRUPT, _MK_FP(globData.prev_dos_handler_seg, globData.prev_dos_handler_off));
+			_asm sti;
 
-		// 현재 로딩중인 이 TSR을 언로드한다.
-		//PUTHEX(freeseg(globData.pspseg));
-		freeseg(globData.pspseg);
+			// 현재 로딩중인 이 TSR을 언로드한다.
+			//PUTHEX(freeseg(globData.pspseg));
+			freeseg(globData.pspseg);
+		}
 	}
 }
 
