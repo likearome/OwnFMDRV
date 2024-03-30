@@ -833,7 +833,6 @@ void ProcessDOSInt_SetIntr(uint8 intnum, void far* vector)
 			{
 				// 이미 셋 된 상태에서 새로 셋하는 것은 게임을 되돌려놓으려는 시도이다.
 				// 이 때 보내준 vector가 진실로 되돌려놓아야 할 핸들러이다.
-				// 차후에 TerminateTSR 단계에서 되돌려주도록 하자.
 				logicStatus.isFMDRVSet = FALSE;
 				InDOSInt_SetInterruptVector(FMDRV_INTERRUPT, vector);
 				if (logicStatus.isCDPlay)
@@ -879,7 +878,6 @@ void ProcessDOSInt_SetIntr(uint8 intnum, void far* vector)
 			{
 				// 이미 셋 된 상태에서 새로 셋하는 것은 게임을 되돌려놓으려는 시도이다.
 				// 이 때 보내준 vector가 진실로 되돌려놓아야 할 핸들러이다.
-				// 차후에 TerminateTSR 단계에서 되돌려주도록 하자.
 				logicStatus.isTickSet = FALSE;
 				InDOSInt_SetInterruptVector(TICK_INTERRUPT, vector);
 				terminateTSR = TRUE;
