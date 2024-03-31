@@ -39,7 +39,7 @@ OWNFMDRV_MAP   = OWNFMDRV.MAP
 # Compiler settings to optimize for execution time
 MAX_CDAUDIOTRACK=98 	# MSCDEX audiotrack max
 #MAX_CDAUDIOTRACK=42		# Max Koei Soundware tracks
-CFLAGS=-0 -s -d0 -ms -wx -ot -DINTSIG_OFF=23 -DOWNFMDRV_VER="1.3.4" -DMAX_CDAUDIOTRACK=$(MAX_CDAUDIOTRACK)
+CFLAGS=-0 -s -d0 -ms -wx -ot -DINTSIG_OFF=23 -DOWNFMDRV_VER="2.0.0" -DMAX_CDAUDIOTRACK=$(MAX_CDAUDIOTRACK)
 
 # Compiler settings to optimize for memory footprint
 #CFLAGS=-0 -s -d0 -ms -wx -os -DINTSIG_OFF=19
@@ -55,7 +55,10 @@ chint.obj: chint086.asm
 
 $(OWNFMDRV_EXE): $(OWNFMDRV_OBJ)
 	wlink system dos file $(OWNFMDRV_OBJ_COMMA) LIBP $(LIB) option map=ownfmdrv name ownfmdrv order clname rdata clname code segment begtext segment _text clname far_data clname begdata
-
+	wdis -l INTERUP
+	wdis -l DOSUTIL
+	copy $(OWNFMDRV_EXE) D:\Emulator\OwnFMDRV_WATCOM_Local\TESTBED\LEM
+	
 setenv:
 	SET WATCOM=$(WATCOM)
 
