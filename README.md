@@ -184,11 +184,13 @@ OwnFMDRV.INI에 추가하셔서 사용하실 수 있습니다.
   - OPL3, 인텔리전트 MIDI등에 대한 자세한 설명을 볼 수 있는 책
 ## 문서
 - http://www.techhelpmanual.com/95-interrupts_and_bios_services.html
-  - 가장 정확한 IBM DOS Interrupt 매뉴얼
+  - IBM DOS Interrupt 매뉴얼
 - https://bochs.sourceforge.io/techspec/PORTS.LST
-  - 가장 정확한 IBM DOS "알려진(well-known)" 장치들의 사용 포트 번호
+  - IBM DOS "알려진(well-known)" 장치들의 사용 포트 번호
 - https://www.vogons.org/viewtopic.php?p=1231161#p1231161
   - 윈도우95/98에서 이미지 탑재하고 도스 게임에서 CD-DA 듣는 법
+- https://www.compuphase.com/int70.txt
+  - 문서화가 잘 되어 있지 않은 인터럽트 70번 (Real Time Clock)에 대한 자세한 사용법
 ## 라이브러리
 - https://github.com/benhoyt/inih
   - 심플 INI 파서
